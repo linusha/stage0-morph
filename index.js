@@ -3,18 +3,29 @@ import h from 'esm://cache/npm:stage0@0.0.25';
 import { defaultStyle } from 'lively.morphic/rendering/morphic-default.js';
 
 export default class Stage0Morph extends HTMLMorph {
-  displayMorph (morph) {
+  renderMorph (morph) {
     const node = h`
       <div #morphData>
       </div>
     `;
     const { morphdata } = node.collect(node);
 
-    // style: defaultStyle(morph),
+    // TODO
     //   ...defaultAttributes(morph, this)
     const styleProps = defaultStyle(morph);
+
     for (let prop in styleProps) {
       morphdata.style.setProperty(prop, styleProps[prop]);
+    }
+    return node;
+  }
+
+  displayMorph (morph) {
+    let node = this.renderMorph(morph);
+
+    for (let submorph of morph.submorphs) {
+      const submorphNode = this.renderMorph(submorph);
+      node.appendChild(submorphNode);
     }
 
     this.domNode = node;
