@@ -2,7 +2,26 @@ import { HTMLMorph } from 'lively.morphic';
 import h from 'esm://cache/npm:stage0@0.0.25';
 import { defaultStyle } from 'lively.morphic/rendering/morphic-default.js';
 
+let renderMap, handledMorphs;
+
 export default class Stage0Morph extends HTMLMorph {
+  constructor (props) {
+    super(props);
+    renderMap = new WeakMap();
+    handledMorphs = [];
+  }
+
+  updateRendering () {
+    debugger;
+    for (let morph of handledMorphs) {
+      if (morph._hatOptikSchmutz) {
+        const node = renderMap.get(morph);
+        this.applyStylingToNode(morph, node);
+      } // TODO: second case -- struktureller schmutz
+      // else: noop
+    }
+  }
+
   renderMorph (morph) {
     const node = h`
       <div #morphData>
@@ -12,12 +31,18 @@ export default class Stage0Morph extends HTMLMorph {
 
     // TODO
     //   ...defaultAttributes(morph, this)
+    this.applyStylingToNode(morph, morphdata);
+    renderMap.set(morph, node);
+    handledMorphs.push(morph);
+    return node;
+  }
+
+  applyStylingToNode (morph, node) {
     const styleProps = defaultStyle(morph);
 
     for (let prop in styleProps) {
-      morphdata.style.setProperty(prop, styleProps[prop]);
+      node.style.setProperty(prop, styleProps[prop]);
     }
-    return node;
   }
 
   displayMorph (morph) {
@@ -29,46 +54,5 @@ export default class Stage0Morph extends HTMLMorph {
     }
 
     this.domNode = node;
-  }
-
-  counterExample () {
-    // Create view template.
-    // Mark dynamic references with a #-syntax where needed.
-    const view = h`
-      <div>
-        <h1>#count</h1>
-        <button #down>-</button>
-        <button #up>+</button>
-      </div>
-    `;
-    function Main () {
-      const root = view;
-
-      // Collect references to dynamic parts
-      const { count, down, up } = view.collect(root);
-
-      const state = {
-        count: 0
-      };
-
-      const update = () => count.nodeValue = state.count;
-
-      down.onclick = () => {
-        state.count--;
-        update();
-      };
-
-      up.onclick = () => {
-        state.count++;
-        update();
-      };
-
-      update();
-
-      return root;
-    }
-
-    const dom = Main();
-    this.domNode = dom;
   }
 }
