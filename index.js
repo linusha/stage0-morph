@@ -11,8 +11,12 @@ export default class Stage0Morph extends HTMLMorph {
     handledMorphs = [];
   }
 
+  reset () {
+    renderMap = new WeakMap();
+    handledMorphs = [];
+  }
+
   updateRendering () {
-    debugger;
     for (let morph of handledMorphs) {
       if (morph._hatOptikSchmutz) {
         const node = renderMap.get(morph);
@@ -34,6 +38,12 @@ export default class Stage0Morph extends HTMLMorph {
     this.applyStylingToNode(morph, morphdata);
     renderMap.set(morph, node);
     handledMorphs.push(morph);
+
+    for (let submorph of morph.submorphs) {
+      const submorphNode = this.renderMorph(submorph);
+      node.appendChild(submorphNode);
+    }
+
     return node;
   }
 
@@ -47,12 +57,6 @@ export default class Stage0Morph extends HTMLMorph {
 
   displayMorph (morph) {
     let node = this.renderMorph(morph);
-
-    for (let submorph of morph.submorphs) {
-      const submorphNode = this.renderMorph(submorph);
-      node.appendChild(submorphNode);
-    }
-
     this.domNode = node;
   }
 }
