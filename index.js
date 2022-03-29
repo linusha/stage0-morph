@@ -20,15 +20,11 @@ export default class Stage0Morph extends HTMLMorph {
     `;
   }
 
-  updateRendering () {
-    this.renderer.simulateRenderingLoop();
-  }
-
   /**
    * Current entry point for render logic
    */
   renderWorld (worldMorph) {
     if (worldMorph) this.renderer.addRootMorph(worldMorph);
-    this.updateRendering();
+    this.renderer.renderWorld();
   }
 }

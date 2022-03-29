@@ -1,5 +1,9 @@
 # stage0-morph
 
+## Idea of the new stage0 renderer
+
+![](img/loop.jpg)
+
 ## Notes on the current render logic
 
 ### Rendering loop

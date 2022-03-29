@@ -1,90 +1,123 @@
 
-import h from 'esm://cache/npm:stage0@0.0.25';
+import h from 'esm://cache/stage0@0.0.25';
+import keyed from 'esm://cache/stage0@0.0.25/keyed';
 
-import { remove } from 'lively.lang/array.js';
 import { applyAttributesToNode, applyStylingToNode } from './helpers.js';
+
+const morphnode = h`
+      <div>
+      </div>
+    `;
 
 export default class Stage0Renderer {
   // -=-=-=-
   // SETUP
   // -=-=-=-
+
   constructor () {
     this.renderMap = new WeakMap();
     this.handledMorphs = [];
-    // TODO: divide into optical and structural changes
-    this.dirtyMorphs = [];
+    this.morphsWithStructuralChanges = [];
+    this.renderedMorphsWithChanges = [];
   }
 
   reset () {
     this.renderMap = new WeakMap();
     this.handledMorphs = [];
-    this.rootMorph = null;
-    this.rootNode = null;
+    this.morphsWithStructuralChanges = [];
+    this.renderedMorphsWithChanges = [];
   }
 
-  addRootMorph (morph) {
-    this.rootMorph = morph;
-    const node = this.renderMorph(morph);
-    this.rootNode = node;
+  // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+  //  HIGHER LEVEL RENDERING FUNCTIONS
+  // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+  addRootMorph (morph) { // will be replaced with something related to the actual world later
+    const node = this.renderNewMorph(morph);
     document.getElementById('stage0root').appendChild(node);
   }
 
-  renderMorph (morph) {
-    let domNode = this.renderMap.get(morph);
-    // Morph has already been rendered once, node exists
-    if (domNode) {
-      applyAttributesToNode(morph, domNode);
-      applyStylingToNode(morph, domNode);
-      if (morph.structuralDirt) {
-        // this leads to the correct result, but takes significantly more render steps than we want
-        // here comes the tricky part, i.e. reconciliation of the dom nodes with keyed?
-        domNode.replaceChildren();
-        for (let submorph of morph.submorphs) {
-          const submorphNode = this.renderMorph(submorph);
-          domNode.appendChild(submorphNode);
-        }
-      }
-      delete morph._customDirty;
-      // return;
+  renderWorld () { // this is what we need to call in a loop later on
+    this.emptyRenderQueues();
+
+    for (let morph of this.handledMorphs) {
+      if (morph.renderingState.hasStructuralChanges) this.morphsWithStructuralChanges.push(morph);
+      if (morph.renderingState.needsRerender) this.renderedMorphsWithChanges.push(morph);
     }
-    // morph gets rendered for the first time, need to create new dom node
-    const node = h`
-      <div>
-      </div>
-    `;
+
+    for (let morph of this.morphsWithStructuralChanges) {
+      this.renderStructuralChanges(morph);
+    }
+
+    for (let morph of this.renderedMorphsWithChanges) {
+      this.renderStylingChanges(morph);
+    }
+  }
+
+  // -=-=-=-=-=-=-=-=-=-=-=-=-=-
+  // BASIC RENDERING FUNCTIONS
+  // -=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+  /**
+   * Returns a new DOM node for a morph.
+   * @param {Morph} morph - The morph for which a DOM node should be generated.
+   */
+  renderNewMorph (morph) {
+    const node = morphnode.cloneNode(true);
+
+    this.renderMap.set(morph, node);
+    this.handledMorphs.push(morph);
 
     applyAttributesToNode(morph, node);
     applyStylingToNode(morph, node);
 
     for (let submorph of morph.submorphs) {
-      const submorphNode = this.renderMorph(submorph);
+      const submorphNode = this.renderNewMorph(submorph);
       node.appendChild(submorphNode);
     }
 
-    delete morph._customDirty;
-    this.renderMap.set(morph, node);
-    this.handledMorphs.push(morph);
     return node;
   }
 
-  simulateRenderingLoop () {
-    this.dirtyMorphs = [];
+  /**
+   * Updates the DOM structure starting from the node for `morph`. Does not take styling into account. Will add/remove nodes to the dom as necessary.
+   * @param { Morph } morph - The morph which has had changed to its submorph hierarchy.
+   */
+  renderStructuralChanges (morph) {
+    const node = this.getNodeForMorph(morph);
 
-    for (let morph of this.handledMorphs) {
-      if (morph._customDirty) {
-        this.dirtyMorphs.push(morph);
-      }
-    }
+    const submorphsToRender = morph.submorphs;
 
-    for (let morph of this.dirtyMorphs) {
-      this.renderMorph(morph);
-      remove(this.dirtyMorphs, morph);
-    }
+    keyed('key',
+      node,
+      morph.renderingState.renderedMorphs,
+      submorphsToRender,
+      item => this.renderNewMorph(item));
+
+    morph.renderingState.renderedMorphs = morph.submorphs.slice();
+    morph.renderingState.hasStructuralChanges = false;
+  }
+
+  /**
+   * Assumes that a DOM node for the given morph already exists and changes the attributes of this node according to the current style definition of the morph.
+   * @param { Morph } morph - The morph for which to update the rendering.
+   */
+  renderStylingChanges (morph) {
+    const node = this.getNodeForMorph(morph);
+
+    applyStylingToNode(morph, node);
+    morph.renderingState.needsRerender = false;
   }
 
   // -=-=-=-=-=-=-=-=-
   // HELPER FUNCTIONS
   // -=-=-=-=-=-=-=-=-
+
+  emptyRenderQueues () {
+    this.morphsWithStructuralChanges = [];
+    this.renderedMorphsWithChanges = [];
+  }
+
   getNodeForMorph (morph) {
     return this.renderMap.get(morph);
   }
