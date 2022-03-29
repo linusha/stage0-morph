@@ -1,62 +1,34 @@
 import { HTMLMorph } from 'lively.morphic';
 import h from 'esm://cache/npm:stage0@0.0.25';
-import { defaultStyle } from 'lively.morphic/rendering/morphic-default.js';
-
-let renderMap, handledMorphs;
+import Stage0Renderer from './renderer.js';
 
 export default class Stage0Morph extends HTMLMorph {
   constructor (props) {
     super(props);
-    renderMap = new WeakMap();
-    handledMorphs = [];
+    this.renderer = new Stage0Renderer();
+    this.domNode = h`
+      <div id='stage0root'>
+      </div>
+    `;
   }
 
   reset () {
-    renderMap = new WeakMap();
-    handledMorphs = [];
+    this.renderer.reset();
+    this.domNode = h`
+      <div id='stage0root'>
+      </div>
+    `;
   }
 
   updateRendering () {
-    for (let morph of handledMorphs) {
-      if (morph._hatOptikSchmutz) {
-        const node = renderMap.get(morph);
-        this.applyStylingToNode(morph, node);
-      } // TODO: second case -- struktureller schmutz
-      // else: noop
-    }
+    this.renderer.simulateRenderingLoop();
   }
 
-  renderMorph (morph) {
-    const node = h`
-      <div #morphData>
-      </div>
-    `;
-    const { morphdata } = node.collect(node);
-
-    // TODO
-    //   ...defaultAttributes(morph, this)
-    this.applyStylingToNode(morph, morphdata);
-    renderMap.set(morph, node);
-    handledMorphs.push(morph);
-
-    for (let submorph of morph.submorphs) {
-      const submorphNode = this.renderMorph(submorph);
-      node.appendChild(submorphNode);
-    }
-
-    return node;
-  }
-
-  applyStylingToNode (morph, node) {
-    const styleProps = defaultStyle(morph);
-
-    for (let prop in styleProps) {
-      node.style.setProperty(prop, styleProps[prop]);
-    }
-  }
-
-  displayMorph (morph) {
-    let node = this.renderMorph(morph);
-    this.domNode = node;
+  /**
+   * Current entry point for render logic
+   */
+  renderWorld (worldMorph) {
+    if (worldMorph) this.renderer.addRootMorph(worldMorph);
+    this.updateRendering();
   }
 }
