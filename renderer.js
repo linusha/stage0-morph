@@ -4,11 +4,6 @@ import keyed from 'esm://cache/stage0@0.0.25/keyed';
 
 import { applyAttributesToNode, applyStylingToNode } from './helpers.js';
 
-const morphnode = h`
-      <div>
-      </div>
-    `;
-
 export default class Stage0Renderer {
   // -=-=-=-
   // SETUP
@@ -63,7 +58,7 @@ export default class Stage0Renderer {
    * @param {Morph} morph - The morph for which a DOM node should be generated.
    */
   renderNewMorph (morph) {
-    const node = morphnode.cloneNode(true);
+    const node = morph.getNodeForRenderer(this);
 
     this.renderMap.set(morph, node);
     this.handledMorphs.push(morph);
@@ -104,7 +99,6 @@ export default class Stage0Renderer {
    */
   renderStylingChanges (morph) {
     const node = this.getNodeForMorph(morph);
-
     applyStylingToNode(morph, node);
     morph.renderingState.needsRerender = false;
   }
@@ -120,5 +114,15 @@ export default class Stage0Renderer {
 
   getNodeForMorph (morph) {
     return this.renderMap.get(morph);
+  }
+
+  // -=-=-=-=-=-
+  // NODE TYPES
+  // -=-=-=-=-=-
+  nodeForMorph () {
+    return h`
+      <div>
+      </div>
+    `;
   }
 }

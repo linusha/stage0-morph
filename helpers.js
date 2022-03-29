@@ -2,7 +2,11 @@ import { defaultStyle } from 'lively.morphic/rendering/morphic-default.js';
 import bowser from 'bowser';
 
 export function applyStylingToNode (morph, node) {
-  const styleProps = defaultStyle(morph);
+  let styleProps = defaultStyle(morph);
+  
+  if (typeof morph.renderStyles === "function") { 
+    styleProps = morph.renderStyles(styleProps);
+  }
 
   for (let prop in styleProps) {
     node.style.setProperty(prop, styleProps[prop]);
@@ -35,8 +39,11 @@ function defaultAttributes (morph) {
 }
 
 export function applyAttributesToNode (morph, node) {
-  const attrs = defaultAttributes(morph);
-
+  let attrs = defaultAttributes(morph);
+  
+  if (typeof morph.renderAttributes === "function") { 
+    attrs = morph.renderAttributes(attrs);
+  }
   for (let attr in attrs) {
     node.setAttribute(attr, attrs[attr]);
   }
