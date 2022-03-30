@@ -115,6 +115,8 @@ export default class Stage0Renderer {
   renderStylingChanges (morph) {
     const node = this.getNodeForMorph(morph);
     applyStylingToNode(morph, node);
+
+    // TODO: this needs to call the after render hooks later on
     morph.renderingState.needsRerender = false;
   }
 
@@ -163,6 +165,16 @@ export default class Stage0Renderer {
     innernode.style.height = `${this.height}px`;
     innernode.style.pointerEvents = 'none';
     innernode.style.position = 'absolute';
+    return node;
+  }
+
+  nodeForHTMLMorph (morph) {
+    const node = h`
+      <div>
+      </div>
+    `;
+    node.appendChild(morph.domNode);
+
     return node;
   }
 
