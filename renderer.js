@@ -3,12 +3,12 @@ import h from 'esm://cache/stage0@0.0.25';
 import keyed from 'esm://cache/stage0@0.0.25/keyed';
 
 import { applyAttributesToNode, applyStylingToNode } from './helpers.js';
+import { withoutAll } from 'lively.lang/array.js';
 
 export default class Stage0Renderer {
   // -=-=-=-
   // SETUP
   // -=-=-=-
-
   constructor () {
     this.renderMap = new WeakMap();
     this.handledMorphs = [];
@@ -82,12 +82,27 @@ export default class Stage0Renderer {
     const node = this.getNodeForMorph(morph);
 
     const submorphsToRender = morph.submorphs;
+    const alredayRenderedSubmorphs = morph.renderingState.renderedMorphs;
+
+    const newlyRenderedSubmorphs = withoutAll(submorphsToRender, alredayRenderedSubmorphs);
 
     keyed('key',
       node,
-      morph.renderingState.renderedMorphs,
+      alredayRenderedSubmorphs,
       submorphsToRender,
-      item => this.renderNewMorph(item));
+      item => this.renderNewMorph(item)
+    );
+
+    // TODO: migrate actual hook over
+    for (let submorph of newlyRenderedSubmorphs) {
+      const node = this.getNodeForMorph(submorph);
+      const hooks = submorph.getHooksForRenderer(this);
+      for (let hook of hooks) {
+        hook(submorph, node);
+      }
+      // TODO: this is not enough, we could have multiple hooks!
+      // submorph.afterRenderHook(node);
+    }
 
     morph.renderingState.renderedMorphs = morph.submorphs.slice();
     morph.renderingState.hasStructuralChanges = false;
@@ -119,10 +134,47 @@ export default class Stage0Renderer {
   // -=-=-=-=-=-
   // NODE TYPES
   // -=-=-=-=-=-
-  nodeForMorph () {
+  nodeForMorph (morph) {
     return h`
       <div>
       </div>
     `;
+  }
+
+  nodeForCheckBox (morph) {
+    return h`
+       <div>
+         <input type="checkbox">
+         </input>
+       </div>
+      `;
+  }
+
+  nodeForCanvas (morph) {
+    const node = h`
+       <div #outernode>
+         <canvas #innernode>
+         </canvas>
+       </div>
+      `;
+    const { innernode } = node.collect(node);
+    // TODO: this is not enough, we need to do to not only when newly generating the node but also when updating the styleprops (e.g. width)
+    innernode.style.width = `${this.width}px`;
+    innernode.style.height = `${this.height}px`;
+    innernode.style.pointerEvents = 'none';
+    innernode.style.position = 'absolute';
+    return node;
+  }
+
+  // -=-=-=-
+  // HOOKS
+  // -=-=-=-
+  hooksForCanvas () {
+    return [function (morph, node) {
+      const { innernode } = node.collect(node);
+      const hasNewCanvas = morph._canvas !== innernode && innernode.tagName === 'CANVAS';
+      morph.afterRender(innernode, hasNewCanvas);
+    }
+    ];
   }
 }
