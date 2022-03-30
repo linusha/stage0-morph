@@ -58,10 +58,15 @@ export default class Stage0Renderer {
    * @param {Morph} morph - The morph for which a DOM node should be generated.
    */
   renderNewMorph (morph) {
-    const node = morph.getNodeForRenderer(this);
+    let node;
+    node = this.renderMap.get(morph);
 
-    this.renderMap.set(morph, node);
-    this.handledMorphs.push(morph);
+    if (!node) {
+      node = morph.getNodeForRenderer(this);
+      this.renderMap.set(morph, node);
+    }
+
+    this.handledMorphs.push(morph); // this is only a hack while working on this in isolation and it can be removed later
 
     applyAttributesToNode(morph, node);
     applyStylingToNode(morph, node);
