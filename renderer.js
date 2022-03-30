@@ -4,6 +4,7 @@ import keyed from 'esm://cache/stage0@0.0.25/keyed';
 
 import { applyAttributesToNode, applyStylingToNode } from './helpers.js';
 import { withoutAll } from 'lively.lang/array.js';
+import { string } from 'lively.lang';
 
 export default class Stage0Renderer {
   // -=-=-=-
@@ -159,7 +160,7 @@ export default class Stage0Renderer {
 
   nodeForCanvas (morph) {
     const node = h`
-       <div #outernode>
+       <div>
          <canvas #innernode>
          </canvas>
        </div>
@@ -180,6 +181,36 @@ export default class Stage0Renderer {
     `;
     node.appendChild(morph.domNode);
 
+    return node;
+  }
+
+  nodeForImage (morph) {
+    let url = morph.imageUrl;
+    if (url.startsWith('data:')) {
+      const dataPos = url.indexOf(',');
+      const header = url.substring(5, dataPos);
+      const [mimeType, encoding] = header.split(';');
+      const data = url.substring(dataPos + 1);
+      if (encoding !== 'base64') {
+        url = string.createDataURI(data, mimeType);
+      }
+    }
+
+    const node = h`
+       <div>
+         <img #innernode>
+         </img>
+       </div>
+      `;
+    const { innernode } = node.collect(node);
+    innernode.draggable = false;
+    innernode.style['pointer-events'] = 'none';
+    innernode.style.position = 'absolute';
+    innernode.style.left = 0;
+    innernode.style.width = '100%';
+    innernode.style.height = '100%';
+    innernode.src = url;
+    innernode.alt = morph.tooltip || '';
     return node;
   }
 

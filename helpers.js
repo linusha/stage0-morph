@@ -3,8 +3,8 @@ import bowser from 'bowser';
 
 export function applyStylingToNode (morph, node) {
   let styleProps = defaultStyle(morph);
-  
-  if (typeof morph.renderStyles === "function") { 
+
+  if (typeof morph.renderStyles === 'function') {
     styleProps = morph.renderStyles(styleProps);
   }
 
@@ -40,8 +40,8 @@ function defaultAttributes (morph) {
 
 export function applyAttributesToNode (morph, node) {
   let attrs = defaultAttributes(morph);
-  
-  if (typeof morph.renderAttributes === "function") { 
+
+  if (typeof morph.renderAttributes === 'function') {
     attrs = morph.renderAttributes(attrs);
   }
   for (let attr in attrs) {
