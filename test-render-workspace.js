@@ -41,7 +41,9 @@ const layoutedMorph = new Morph({
   borderColor: Color.red,
   borderWidth: 1,extent: pt(30,40), position: pt(20,20)})]
 })
-worldMorph.addMorph(layoutedMorph)
-layoutedMorph.extent = pt(200,200)
 
+worldMorph.addMorph(that)
+that.position = pt(10,10)
+layoutedMorph.extent = pt(200,200)
+that.submorphs.map(m => m.fill = Color.pink)
 stage0m.renderWorld()

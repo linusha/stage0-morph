@@ -9,7 +9,9 @@ export function applyStylingToNode (morph, node) {
   }
 
   for (let prop in styleProps) {
-    node.style.setProperty(prop, styleProps[prop]);
+    let name = prop.replace(/([A-Z])/g, '-$1'); // this is more of a hack and is probably already implemented somewhere else as well
+    name = name.toLowerCase();
+    node.style.setProperty(name, styleProps[prop]);
   }
 }
 
