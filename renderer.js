@@ -30,11 +30,13 @@ export default class Stage0Renderer {
 
   addRootMorph (morph) { // will be replaced with something related to the actual world later
     const node = this.renderNewMorph(morph);
+    this.rootMorph = morph;
     document.getElementById('stage0root').appendChild(node);
   }
 
   renderWorld () { // this is what we need to call in a loop later on
     this.emptyRenderQueues();
+    this.rootMorph.applyLayoutIfNeeded(); // cascades through all submorphs and applies the javascript layouts
 
     for (let morph of this.handledMorphs) {
       if (morph.renderingState.hasStructuralChanges) this.morphsWithStructuralChanges.push(morph);

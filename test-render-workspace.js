@@ -2,7 +2,7 @@ import { localInterface } from "lively-system-interface";
 await localInterface.importPackage( "http://localhost:9011/stage0-morph/");
 import Stage0Morph from "stage0-morph";
 import { pt, Color } from "lively.graphics";
-import { Morph, HTMLMorph, Ellipse } from "lively.morphic";
+import { Morph, ProportionalLayout, HTMLMorph, Ellipse } from "lively.morphic";
 import { CheckBox } from "lively.components/widgets.js";
 import { Canvas } from "lively.components/canvas.js";
 
@@ -28,6 +28,20 @@ worldMorph.addMorph(new Morph({fill: Color.pink}))
 worldMorph.addMorph(new Ellipse({extent: pt(30,80), fill: Color.brown}))
 
 worldMorph.addMorph(new Canvas({name: 'test', extent: pt(2)}))
-stage0m.renderWorld()
 
-worldMorph.get('test').html = '<h1>Test</h1>'
+// setup for proportional layout
+const layoutedMorph = new Morph({
+  extent: pt(100,100),
+  fill: Color.transparent,
+  borderColor: Color.red,
+  borderWidth: 1,
+  position: pt(10,10),
+  layout: new ProportionalLayout({lastExtent: pt(100,100)}),
+  submorphs: [new Morph({fill: Color.transparent,
+  borderColor: Color.red,
+  borderWidth: 1,extent: pt(30,40), position: pt(20,20)})]
+})
+worldMorph.addMorph(layoutedMorph)
+layoutedMorph.extent = pt(200,200)
+
+stage0m.renderWorld()
