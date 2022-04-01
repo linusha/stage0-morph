@@ -1,5 +1,34 @@
 # stage0-morph
 
+Towards a future without virtual-dom in lively.next.
+
+## roadmap
+
+### what we have
+
+- render `Morph`, `Ellipse`, `Canvas`, `Image`
+- render `HTML` morphs **without CSS** (just gets ignored atm)
+- render morphs with JS layout
+- render morphs with layouts that are rendered via CSS
+
+### known missings
+
+- rendered morphs are outside of the event dispatching
+- everything lives outside of the actual renderloop rendering the world
+- we currently use separate flags for indicating the need to update the rendering of a morph. this should eventually just be `_dirty`
+
+### next steps
+
+We could integrate into the render loop now, similar to how the `HTMLMorph` get itself rendered. It is not entirely clear if this actually gets us what we really want, we want to get events dispatched as the most important step.
+
+Alternatively, we can stick with the "manual" loop that we currently have. And just try to get the events working.
+
+Getting the events to work is crucial, since this is what will allow us to integrate the scroll patching and fixing what currently is handled in `MorphAfterRenderHook`. This has important API implications.
+
+When all this is done, I would aim for a tighter integration of the new renderer with the renderer that is currenly being used and have the old renderer render `TextMorphs` while everything else could in theory already being rendered with our new renderer. This would allows us to find out how to integrate the new renderer in the loop logic and also find out more problems in the already existing render logic before dumping huge amounts of time into rendering the text layouts.
+
+I would prefer testing the new renderer, but this probably only makes sense when we have an idea of how the final loop integration will look like.
+
 ## Idea of the new stage0 renderer
 
 ![](img/loop.jpg)
@@ -63,7 +92,25 @@ When creating the `div` with `h()` in `renderMorph()`, the style object of the v
 ### rendering of fixed morphs
 
 Morphs with a fixed position have a separate rendering mechanism, as they exist in a separate hierarchy, e.g. are not inside of the `div` representing the world.
+That they exist outside of the "normal" rendering tree is the reason for why they are handled in a separate step.
+When we go away from rendering with `virtual-dom` this is probably no longer necessary.
 
+### `MorphAfterRenderHook`
+
+`virtual-dom` executes these hooks directly after creating a DOM element.
+
+Most parts of the hook wait until the resulting node is mounted:
+When we have added a new submorph (only scenario in which `_submorphOrderChanged === true`) we call `updateScrollOfSubmorphs`. Only when this is not the case and we have a `clipMode` other than visible, we call `updateScroll` on the `Hook`. 
+
+In case we are in the dom **and even in previous attemps**, if the Morph or its owner has a layout that gets renderer via `CSS`, `ensureBoundsMonitor` gets called on the layout.
+
+#### updateScrollOfSubmorphs
+
+Loops over submorphs of the morph and calls `updateScroll` on each of them **and their submorphs**.
+#### updateScroll
+
+When a scroll Event is dispatched, we store the new morphic property directly with the updated values from the event. We wait for some time until we tell the renderer that the scroll took place (`interactiveScrollInProgress`). The renderer then takes care of bringing the DOM back in sync with the morphic property.
+This is what `updateScroll` is for which sets the scrollLeft and scrollTop properties of the DOM node to be in sync with the morphic property.
 
 ## LICENSE
 
