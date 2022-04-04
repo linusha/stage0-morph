@@ -3,42 +3,40 @@ import h from 'esm://cache/stage0@0.0.25';
 import keyed from 'esm://cache/stage0@0.0.25/keyed';
 
 import { applyAttributesToNode, applyStylingToNode } from './helpers.js';
-import { withoutAll } from 'lively.lang/array.js';
+import { withoutAll, remove } from 'lively.lang/array.js';
 import { string } from 'lively.lang';
 
+/**
+ * Currently handles rendering of a single Stage0Morph that acts as a "world", similar to the purporse a world would server in normal lively.
+ This allows us to hack into the default render loop of lively.
+ */
 export default class Stage0Renderer {
   // -=-=-=-
   // SETUP
   // -=-=-=-
-  constructor () {
+  constructor (owningMorph) {
+    this.owner = owningMorph;
     this.renderMap = new WeakMap();
-    this.handledMorphs = [];
     this.morphsWithStructuralChanges = [];
     this.renderedMorphsWithChanges = [];
-  }
-
-  reset () {
-    this.renderMap = new WeakMap();
-    this.handledMorphs = [];
-    this.morphsWithStructuralChanges = [];
-    this.renderedMorphsWithChanges = [];
+    this.rootNode = h`<div id='stage0root'></div>`;
+    this.renderMap.set(this.owner, this.rootNode);
   }
 
   // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
   //  HIGHER LEVEL RENDERING FUNCTIONS
   // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
-  addRootMorph (morph) { // will be replaced with something related to the actual world later
-    const node = this.renderNewMorph(morph);
-    this.rootMorph = morph;
-    document.getElementById('stage0root').appendChild(node);
-  }
-
-  renderWorld () { // this is what we need to call in a loop later on
+  /**
+   * Called to initialize and update the custom VDOM node as long as we are hooked into the default lively renderer.
+   */
+  renderWorld () {
     this.emptyRenderQueues();
-    this.rootMorph.applyLayoutIfNeeded(); // cascades through all submorphs and applies the javascript layouts
+    this.owner.applyLayoutIfNeeded(); // cascades through all submorphs and applies the javascript layouts
 
-    for (let morph of this.handledMorphs) {
+    const morphsToHandle = this.owner.withAllSubmorphsDo(m => m);
+
+    for (let morph of morphsToHandle) {
       if (morph.renderingState.hasStructuralChanges) this.morphsWithStructuralChanges.push(morph);
       if (morph.renderingState.needsRerender) this.renderedMorphsWithChanges.push(morph);
     }
@@ -50,6 +48,8 @@ export default class Stage0Renderer {
     for (let morph of this.renderedMorphsWithChanges) {
       this.renderStylingChanges(morph);
     }
+
+    return this.rootNode;
   }
 
   // -=-=-=-=-=-=-=-=-=-=-=-=-=-
@@ -60,26 +60,24 @@ export default class Stage0Renderer {
    * Returns a new DOM node for a morph.
    * @param {Morph} morph - The morph for which a DOM node should be generated.
    */
-  renderNewMorph (morph) {
+  renderMorph (morph) {
     let node;
     node = this.renderMap.get(morph);
 
     if (!node) {
-      node = morph.getNodeForRenderer(this);
+      node = morph.getNodeForRenderer(this); // returns a DOM node as specified by the morph
       this.renderMap.set(morph, node);
     }
-
-    this.handledMorphs.push(morph); // this is only a hack while working on this in isolation and it can be removed later
 
     applyAttributesToNode(morph, node);
     applyStylingToNode(morph, node);
 
     for (let submorph of morph.submorphs) {
-      const submorphNode = this.renderNewMorph(submorph);
+      const submorphNode = this.renderMorph(submorph);
       node.appendChild(submorphNode);
     }
 
-    return node;
+    this.rootNode.appendChild(node);
   }
 
   /**
@@ -98,7 +96,7 @@ export default class Stage0Renderer {
       node,
       alredayRenderedSubmorphs,
       submorphsToRender,
-      item => this.renderNewMorph(item)
+      item => this.renderMorph(item)
     );
 
     // TODO: migrate actual hook over

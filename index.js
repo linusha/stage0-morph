@@ -1,30 +1,15 @@
-import { HTMLMorph } from 'lively.morphic';
-import h from 'esm://cache/npm:stage0@0.0.25';
-import Stage0Renderer from './renderer.js';
 
-export default class Stage0Morph extends HTMLMorph {
+import Stage0Renderer from './renderer.js';
+import Stage0VNode from './stage0-vnode.js';
+import { Morph } from 'lively.morphic';
+
+export default class Stage0Morph extends Morph {
   constructor (props) {
     super(props);
-    this.renderer = new Stage0Renderer();
-    this.domNode = h`
-      <div id='stage0root'>
-      </div>
-    `;
+    this.renderer = new Stage0Renderer(this);
   }
 
-  reset () {
-    this.renderer.reset();
-    this.domNode = h`
-      <div id='stage0root'>
-      </div>
-    `;
-  }
-
-  /**
-   * Current entry point for render logic
-   */
-  renderWorld (worldMorph) {
-    if (worldMorph) this.renderer.addRootMorph(worldMorph);
-    this.renderer.renderWorld();
+  render (renderer) {
+    return new Stage0VNode(this, renderer);
   }
 }
