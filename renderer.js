@@ -3,7 +3,7 @@ import h from 'esm://cache/stage0@0.0.25';
 import keyed from 'esm://cache/stage0@0.0.25/keyed';
 
 import { applyAttributesToNode, applyStylingToNode } from './helpers.js';
-import { withoutAll, remove } from 'lively.lang/array.js';
+import { withoutAll } from 'lively.lang/array.js';
 import { string } from 'lively.lang';
 
 /**
@@ -75,9 +75,10 @@ export default class Stage0Renderer {
     for (let submorph of morph.submorphs) {
       const submorphNode = this.renderMorph(submorph);
       node.appendChild(submorphNode);
+      morph.renderingState.renderedMorphs.push(submorph);
     }
 
-    this.rootNode.appendChild(node);
+    return node;
   }
 
   /**
@@ -90,9 +91,11 @@ export default class Stage0Renderer {
     const submorphsToRender = morph.submorphs;
     const alredayRenderedSubmorphs = morph.renderingState.renderedMorphs;
 
-    const newlyRenderedSubmorphs = withoutAll(submorphsToRender, alredayRenderedSubmorphs);
+    // TODO: somehow the order needs to be this, otherwise submorphs are just going into nirvana when dragged out.
+    // WTF?
+    const newlyRenderedSubmorphs = withoutAll(alredayRenderedSubmorphs, submorphsToRender);
 
-    keyed('key',
+    keyed('id',
       node,
       alredayRenderedSubmorphs,
       submorphsToRender,

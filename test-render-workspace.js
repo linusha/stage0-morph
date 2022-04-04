@@ -5,7 +5,7 @@ import { pt, Color } from "lively.graphics";
 import { Morph, ProportionalLayout, Ellipse } from "lively.morphic";
 import { Canvas } from "lively.components/canvas.js";
 
-const stage0m = new Stage0Morph({extent: pt(500,500), fill: Color.transparent})
+const stage0m = new Stage0Morph({extent: pt(500,500), fill: Color.white})
 stage0m.openInWorld()
 stage0m.remove()
 // TODO: for these morphs hook are not toggled i believe!
@@ -13,7 +13,7 @@ const subsubmorph = new Morph({name: 'subsubmorph', fill: Color.pink,extent: pt(
 const submorph = new Morph({name: 'submorph', fill: Color.red,extent: pt(40,40),position: pt(30,30),submorphs:[subsubmorph]})
 const submorph2 = new Morph({name: 'submorph2', fill: Color.black ,extent: pt(10,10) ,position: pt(40,40)})
 const newMorph = new Morph({name: 'newMorph', fill: Color.green, extent: pt(100,100), borderColor: Color.red, borderWidth: 3, submorphs: [submorph, submorph2]})
-
+$world.addMorph(newMorph)
 stage0m.addMorph(newMorph)
 // submorph.fill = Color.orange;
 // newMorph.clipMode = 'scroll'
