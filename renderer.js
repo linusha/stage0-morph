@@ -19,6 +19,7 @@ export default class Stage0Renderer {
     this.renderMap = new WeakMap();
     this.morphsWithStructuralChanges = [];
     this.renderedMorphsWithChanges = [];
+    this.renderedMorphsWithAnimations = [];
     this.rootNode = h`<div id='stage0root'></div>`;
     this.renderMap.set(this.owner, this.rootNode);
   }
@@ -39,6 +40,7 @@ export default class Stage0Renderer {
     for (let morph of morphsToHandle) {
       if (morph.renderingState.hasStructuralChanges) this.morphsWithStructuralChanges.push(morph);
       if (morph.renderingState.needsRerender) this.renderedMorphsWithChanges.push(morph);
+      if (morph.renderingState.animationAdded) this.renderedMorphsWithAnimations.push(morph);
     }
 
     for (let morph of this.morphsWithStructuralChanges) {
@@ -47,6 +49,12 @@ export default class Stage0Renderer {
 
     for (let morph of this.renderedMorphsWithChanges) {
       this.renderStylingChanges(morph);
+    }
+
+    for (let morph of this.renderedMorphsWithAnimations) {
+      const node = this.getNodeForMorph(morph);
+      morph._animationQueue.startAnimationsFor(node);
+      morph.renderingState.animationsAdded = false;
     }
 
     return this.rootNode;
