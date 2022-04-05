@@ -80,9 +80,14 @@ export default class Stage0Renderer {
     applyAttributesToNode(morph, node);
     applyStylingToNode(morph, node);
 
+    const skipWrapping = morph.layout && morph.layout.renderViaCSS;
+    const wrapperNode = this.submorphWrapperNodeFor(morph);
+    if (!skipWrapping) node.appendChild(wrapperNode);
+
     for (let submorph of morph.submorphs) {
       const submorphNode = this.renderMorph(submorph);
-      node.appendChild(submorphNode);
+      if (skipWrapping) node.appendChild(submorphNode);
+      else wrapperNode.appendChild(submorphNode);
       morph.renderingState.renderedMorphs.push(submorph);
     }
 
@@ -101,12 +106,26 @@ export default class Stage0Renderer {
 
     const newlyRenderedSubmorphs = withoutAll(submorphsToRender, alredayRenderedSubmorphs);
 
-    keyed('id',
-      node,
-      alredayRenderedSubmorphs,
-      submorphsToRender,
-      item => this.renderMorph(item)
-    );
+    let skipWrapping = morph.layout && morph.layout.renderViaCSS;
+    if (skipWrapping) {
+      keyed('key',
+        node,
+        alredayRenderedSubmorphs,
+        submorphsToRender,
+        item => this.renderMorph(item)
+      );
+    } else {
+      const wrapped = node.firstChild && node.firstChild.getAttribute('key').includes('submorphs');
+      if (!wrapped) {
+        node.appendChild(this.submorphWrapperNodeFor(morph));
+      }
+      keyed('key',
+        node.firstChild,
+        alredayRenderedSubmorphs,
+        submorphsToRender,
+        item => this.renderMorph(item)
+      );
+    }
 
     // When a node get removed/added to the DOM its scollTop/scrollLeft values are reset.
     // We fix those up here.
@@ -144,6 +163,26 @@ export default class Stage0Renderer {
   // -=-=-=-=-=-=-=-=-
   // HELPER FUNCTIONS
   // -=-=-=-=-=-=-=-=-
+
+  submorphWrapperNodeFor (morph) {
+    let { borderWidthLeft, borderWidthTop, origin: { x: oX, y: oY } } = morph;
+
+    const node = h`<div></div>`;
+    node.setAttribute('key', 'submorphs-' + morph.id);
+    node.style.setProperty('position', 'absolute');
+    node.style.setProperty('left', `${oX - (morph.isPath ? 0 : borderWidthLeft)}px`);
+    node.style.setProperty('top', `${oY - (morph.isPath ? 0 : borderWidthTop)}px`);
+    if (morph.isPolygon) {
+      node.style.setProperty('height', '100%');
+      node.style.setProperty('width', '100%');
+      node.style.setProperty('overflow', `${morph.clipMode}`);
+      if (morph.clipMode !== 'visible') {
+        if (navigator.userAgent.includes('AppleWebKit')) { node.setAttribute('-webkit-clip-path', `url(#clipPath${morph.id})`); } else { node.setAttribute('clip-path', `url(#clipPath${morph.id})`); }
+      }
+    }
+
+    return node;
+  }
 
   emptyRenderQueues () {
     this.morphsWithStructuralChanges = [];
