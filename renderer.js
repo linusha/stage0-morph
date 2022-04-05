@@ -91,9 +91,7 @@ export default class Stage0Renderer {
     const submorphsToRender = morph.submorphs;
     const alredayRenderedSubmorphs = morph.renderingState.renderedMorphs;
 
-    // TODO: somehow the order needs to be this, otherwise submorphs are just going into nirvana when dragged out.
-    // WTF?
-    const newlyRenderedSubmorphs = withoutAll(alredayRenderedSubmorphs, submorphsToRender);
+    const newlyRenderedSubmorphs = withoutAll(submorphsToRender, alredayRenderedSubmorphs);
 
     keyed('id',
       node,
@@ -102,8 +100,14 @@ export default class Stage0Renderer {
       item => this.renderMorph(item)
     );
 
+    // When a node get removed/added to the DOM its scollTop/scrollLeft values are reset.
+    // We fix those up here.
+    for (let morph of newlyRenderedSubmorphs) {
+      morph.withAllSubmorphsDo(m => this.updateNodeScrollFromMorph(m));
+    }
+
     // TODO: migrate actual hook over
-    for (let submorph of newlyRenderedSubmorphs) {
+    /* for (let submorph of newlyRenderedSubmorphs) {
       const node = this.getNodeForMorph(submorph);
       const hooks = submorph.getHooksForRenderer(this);
       for (let hook of hooks) {
@@ -111,7 +115,7 @@ export default class Stage0Renderer {
       }
       // TODO: this is not enough, we could have multiple hooks!
       // submorph.afterRenderHook(node);
-    }
+    } */
 
     morph.renderingState.renderedMorphs = morph.submorphs.slice();
     morph.renderingState.hasStructuralChanges = false;
@@ -140,6 +144,13 @@ export default class Stage0Renderer {
 
   getNodeForMorph (morph) {
     return this.renderMap.get(morph);
+  }
+
+  updateNodeScrollFromMorph (morph) {
+    const node = this.getNodeForMorph(morph);
+    const { x, y } = morph.scroll;
+    node.scrollTop = y;
+    node.scrollLeft = x;
   }
 
   // -=-=-=-=-=-
