@@ -108,9 +108,16 @@ export default class Stage0Renderer {
 
     let skipWrapping = morph.layout && morph.layout.renderViaCSS;
     if (skipWrapping) {
+      let wasWrapped;
+      if (node.firstChild && node.firstChild.getAttribute('key').includes('submorphs')) {
+        node.firstChild.remove();
+        wasWrapped = true;
+      }
+
       keyed('key',
         node,
-        alredayRenderedSubmorphs,
+        // TODO: can this be optimized?
+        wasWrapped ? [] : alredayRenderedSubmorphs,
         submorphsToRender,
         item => this.renderMorph(item)
       );
