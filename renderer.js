@@ -4,7 +4,11 @@ import keyed from 'esm://cache/stage0@0.0.25/keyed';
 
 import { applyAttributesToNode, applyStylingToNode } from './helpers.js';
 import { withoutAll } from 'lively.lang/array.js';
-import { string } from 'lively.lang';
+import { string, num, obj } from 'lively.lang';
+import { getSvgVertices } from 'lively.morphic/rendering/property-dom-mapping.js';
+import { defaultStyle } from 'lively.morphic/rendering/morphic-default.js';
+
+const svgNs = 'http://www.w3.org/2000/svg';
 
 /**
  * Currently handles rendering of a single Stage0Morph that acts as a "world", similar to the purporse a world would server in normal lively.
@@ -22,6 +26,7 @@ export default class Stage0Renderer {
     this.renderedMorphsWithAnimations = [];
     this.rootNode = h`<div id='stage0root'></div>`;
     this.renderMap.set(this.owner, this.rootNode);
+    this.doc = owningMorph.env.domEnv.document;
   }
 
   // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
@@ -281,6 +286,311 @@ export default class Stage0Renderer {
     innernode.style.height = '100%';
     innernode.src = url;
     innernode.alt = morph.tooltip || '';
+    return node;
+  }
+
+  // -=-=-=-=-=-=-=-=-=-
+  // SVGs and Polygons
+  // -=-=-=-=-=-=-=-=-=-      
+  nodeForPath (morph) {
+    const { id, startMarker, endMarker, showControlPoints, origin, drawnProportion, borderWidth } = morph;
+    const d = getSvgVertices(morph.vertices);
+    const el = this.doc.createElementNS(svgNs, 'path');
+    el.setAttribute('id', 'svg' + morph.id);
+
+    if (morph.drawnProportion !== 0) el.setAttribute('mask', 'url(#mask' + morph.id + ')');
+    else el.setAttribute('mask', '');
+
+    const { vertices, fill, borderColor } = morph;
+
+    if (vertices.length) {
+      el.setAttribute('d', getSvgVertices(vertices));
+    }
+
+    const bs = morph.borderStyle.valueOf();
+    if (bs === 'dashed') {
+      const bw = morph.borderWidth.valueOf();
+      el.setAttribute('stroke-dasharray', bw * 1.61 + ' ' + bw);
+    } else if (bs === 'dotted') {
+      const bw = morph.borderWidth.valueOf();
+      el.setAttribute('stroke-dasharray', '1 ' + bw * 2);
+      el.setAttribute('stroke-linecap', 'round');
+      el.setAttribute('stroke-linejoin', 'round');
+    }
+    el.setAttribute('stroke-width', borderWidth.valueOf());
+    el.setAttribute('fill', fill ? fill.isGradient ? 'url(#gradient-fill' + id + ')' : fill.toString() : 'transparent');
+    el.setAttribute('stroke', borderColor.valueOf().isGradient
+      ? 'url(#gradient-borderColor' + id + ')'
+      : borderColor.valueOf().toString());
+
+    const maskNode = this.doc.createElementNS(svgNs, 'mask');
+    const innerRect = this.doc.createElementNS(svgNs, 'rect');
+    const firstInnerPath = this.doc.createElementNS(svgNs, 'path');
+    const secondInnerPath = this.doc.createElementNS(svgNs, 'path');
+
+    maskNode.append(innerRect, firstInnerPath, secondInnerPath);
+
+    maskNode.setAttribute('id', 'svg' + morph.id);
+
+    innerRect.setAttribute('fill', 'white');
+    innerRect.setAttribute('x', 0);
+    innerRect.setAttribute('y', 0);
+    innerRect.setAttribute('width', morph.width + 20);
+    innerRect.setAttribute('height', morph.height + 20);
+
+    firstInnerPath.setAttribute('d', d);
+    firstInnerPath.setAttribute('stroke', 'black');
+    firstInnerPath.setAttribute('fill', 'none');
+    if (morph.drawnProportion) {
+      firstInnerPath.setAttribute('stroke-width', morph.borderWidth.valueOf() + 1);
+      firstInnerPath.setAttribute('stroke-dasharray', firstInnerPath.getTotalLength());
+      firstInnerPath.setAttribute('stroke-dashoffset', firstInnerPath.getTotalLength() * (1 - morph.drawnProportion));
+    }
+
+    secondInnerPath.setAttribute('d', d);
+    secondInnerPath.setAttribute('stroke', 'white');
+    secondInnerPath.setAttribute('fill', 'none');
+    if (morph.drawnProportion) {
+      firstInnerPath.setAttribute('stroke-width', morph.borderWidth.valueOf() + 1);
+      firstInnerPath.setAttribute('stroke-dasharray', firstInnerPath.getTotalLength());
+      // (-1 + (1 - morph.drawnProportion))
+      firstInnerPath.setAttribute('stroke-dashoffset', firstInnerPath.getTotalLength() * (-morph.drawnProportion));
+    }
+
+    const clipPath = this.doc.createElementNS(svgNs, 'clipPath');
+    clipPath.setAttribute('id', 'clipPath' + morph.id);
+    const clipPathInner = this.doc.createElementNS(svgNs, 'path');
+    clipPath.setAttribute('d', d);
+    clipPath.setAttribute('fill', 'white');
+
+    clipPath.appendChild(clipPathInner);
+
+    let markers = [clipPath, maskNode];
+
+    if (startMarker) {
+      if (!startMarker.id) startMarker.id = 'start-marker';
+      el.attributes['marker-start'] = `url(#${morph.id}-${startMarker.id})`;
+      markers = [];
+      markers.push(this._renderPath_Marker(morph, startMarker));
+    }
+    if (endMarker) {
+      if (!endMarker.id) endMarker.id = 'end-marker';
+      el.attributes['marker-end'] = `url(#${morph.id}-${endMarker.id})`;
+      if (!markers) markers = [];
+      markers.push(this._renderPath_Marker(morph, endMarker));
+    }
+
+    let controlPoints;
+    if (showControlPoints) {
+      controlPoints = this.doc.createElementNS(svgNs, 'g');
+      controlPoints.append(...this._renderPath_ControlPoints(morph));
+    }
+
+    return this.nodeForSVGMorph(morph, el, markers, controlPoints);
+  }
+
+  nodeForSVGMorph (morph, svgEl, markers, controlPoints = []) {
+    const { width, height } = morph.innerBounds();
+    let defs; const svgElements = [];
+
+    if (morph.fill && morph.fill.isGradient) {
+      if (!defs) defs = [];
+      // TODO
+      defs.push(this.renderGradient('fill' + morph.id, morph.extent, morph.fill));
+    }
+    if (morph.borderColor && morph.borderColor.valueOf().isGradient) {
+      if (!defs) defs = [];
+      defs.push(this.renderGradient('borderColor' + morph.id, morph.extent, morph.borderColor));
+    }
+    if (markers && markers.length) {
+      if (!defs) defs = [];
+      defs.push(...markers);
+    }
+
+    svgElements.push(svgEl);
+    if (defs) svgElements.push(h`<defs></defs>`.append(...defs));
+
+    const basicStyle = obj.select(defaultStyle(morph), ['position', 'filter', 'display', 'opacity',
+      'transform', 'top', 'left', 'transformOrigin', 'cursor', 'overflow']);
+
+    const node = h`<div></div>`;
+    for (let prop in basicStyle) {
+      let name = prop.replace(/([A-Z])/g, '-$1'); // this is more of a hack and is probably already implemented somewhere else as well
+      name = name.toLowerCase();
+      node.style.setProperty(name, basicStyle[prop]);
+    }
+    node.style.width = width + 'px';
+    node.style.height = height + 'px';
+    node.style['pointer-events'] = morph.reactsToPointer ? 'auto' : 'none';
+    const innerSvg = h`<svg version='1.1'></svg>`;
+    innerSvg.style.position = 'absolute';
+    innerSvg.style['stroke-linejoin'] = morph.cornerStyle || 'mint';
+    innerSvg.style['stroke-linecap'] = morph.endStyle || 'round';
+    innerSvg.style.overflow = 'visible';
+    innerSvg.append(...svgElements);
+    node.appendChild(innerSvg);
+    // TODO
+    // this.renderSubmorphs(morph),
+    const outerSvg = h`<svg version='1.1'></svg>`;
+    outerSvg.style.position = 'absolute';
+    outerSvg.style['stroke-linejoin'] = morph.cornerStyle || 'mint';
+    outerSvg.style['stroke-linecap'] = morph.endStyle || 'round';
+    outerSvg.style.overflow = 'visible';
+
+    if (controlPoints.length > 0) outerSvg.appendChild(controlPoints);
+
+    node.appendChild(outerSvg);
+    return node;
+  }
+
+  _renderPath_ControlPoints (morph) {
+    // HELPER FUNCTION
+    const circ = (cx, cy, n, merge, type, isCtrl) => {
+      let r = merge ? 12 : Math.min(8, Math.max(3, radius));
+      let cssClass = 'path-point path-point-' + n;
+      const color = merge ? 'orange' : fill;
+      if (typeof type === 'string') cssClass += '-' + type;
+      if (isCtrl) r = Math.max(3, Math.ceil(r / 2));
+      const node = this.doc.createElementNS(svgNs, 'circle');
+      if (isCtrl) {
+        node.setAttribute('fill', 'white');
+        node.setAttribute('stroke-width', 2);
+        node.setAttribute('stroke', color);
+        node.setAttribute('class', cssClass);
+        node.setAttribute('cx', cx);
+        node.setAttribute('cy', cy);
+        node.setAttribute('r', r);
+      } else {
+        node.setAttribute('fill', color);
+        node.setAttribute('class', cssClass);
+        node.setAttribute('cx', cx);
+        node.setAttribute('cy', cy);
+        node.setAttribute('r', r);
+      }
+      return node;
+    };
+
+    const {
+      vertices,
+      borderWidth, showControlPoints, _controlPointDrag
+    } = morph;
+    let radius = borderWidth == 0 ? 6 : borderWidth + 2;
+    let fill = 'red';
+    const rendered = []; const i = 0;
+
+    if (typeof showControlPoints === 'object') {
+      const { radius: r, fill: f } = showControlPoints;
+      if (f) fill = String(f);
+      if (typeof r === 'number') radius = r;
+    }
+
+    if (vertices.length) {
+      let i = 0; let X; let Y; let left_cp;
+      {
+        const { x, y, controlPoints: { next: n } } = vertices[0];
+        const merge = _controlPointDrag && _controlPointDrag.maybeMerge && _controlPointDrag.maybeMerge.includes(i);
+        X = x; Y = y;
+        rendered.push(circ(X, Y, i, merge));
+        left_cp = n;
+      }
+
+      for (i = 1; i < vertices.length - 1; i++) {
+        const vertex = vertices[i];
+        const { isSmooth, x, y, controlPoints: { previous: p, next: n } } = vertex;
+        const merge = _controlPointDrag && _controlPointDrag.maybeMerge && _controlPointDrag.maybeMerge.includes(i);
+
+        if (isSmooth) {
+          rendered.push(
+            circ(x, y, i, merge),
+            circ(X + left_cp.x, Y + left_cp.y, i - 1, false, 'control-2', true),
+            circ(x + p.x, y + p.y, i, false, 'control-1', true));
+        } else {
+          rendered.push(circ(x, y, i, merge));
+        }
+
+        X = x; Y = y;
+        left_cp = n;
+      }
+
+      {
+        const { isSmooth, x, y, controlPoints: { previous: p } } = vertices[vertices.length - 1];
+        const merge = _controlPointDrag && _controlPointDrag.maybeMerge && _controlPointDrag.maybeMerge.includes(i);
+        if (isSmooth) {
+          rendered.push(
+            circ(x, y, i, merge),
+            circ(X + left_cp.x, Y + left_cp.y, i - 1, false, 'control-2', true),
+            circ(x + p.x, y + p.y, i, false, 'control-1', true));
+        } else {
+          rendered.push(circ(x, y, i, merge));
+        }
+      }
+    }
+
+    return rendered;
+  }
+
+  _renderPath_Marker (morph, markerSpec) {
+    return specTo_h_svg(markerSpec);
+
+    // TODO: What the hell is this?
+    function specTo_h_svg (spec) {
+      let { tagName, id, children, style } = spec;
+      const childNodes = children ? children.map(specTo_h_svg) : undefined;
+      if (id) id = morph.id + '-' + id;
+      const node = this.doc.createElementNS(svgNs, tagName);
+      node.setAttribute('id', id);
+      for (let prop in style) {
+        let name = prop.replace(/([A-Z])/g, '-$1');
+        name = name.toLowerCase();
+        node.style.setProperty(name, style[prop]);
+      }
+
+      for (let attr in obj.dissoc(spec, ['tagName', 'id', 'children', 'style'])) {
+        node.setAttribute(attr, attr[attr]);
+      }
+
+      node.append(...childNodes);
+
+      return node;
+    }
+  }
+
+  renderGradient (id, extent, gradient) {
+    gradient = gradient.valueOf();
+    const { bounds, focus, vector, stops } = gradient;
+    const { x: width, y: height } = extent;
+    const props = {
+      id: 'gradient-' + id,
+      gradientUnits: 'userSpaceOnUse',
+      r: '50%'
+    };
+    if (vector) {
+      props.gradientTransform =
+      `rotate(${num.toDegrees(vector.extent().theta())}, ${width / 2}, ${height / 2})`;
+    }
+    if (focus && bounds) {
+      const { width: bw, height: bh } = bounds;
+      const { x, y } = focus;
+      props.gradientTransform = `matrix(
+${bw / width}, 0, 0, ${bh / height},
+${((width / 2) - (bw / width) * (width / 2)) + (x * width) - (width / 2)},
+${((height / 2) - (bh / height) * (height / 2)) + (y * height) - (height / 2)})`;
+    }
+
+    const node = this.doc.createElementNS(svgNs, gradient.type);
+    for (let prop in props) {
+      node.setAttribute(prop, props[prop]);
+    }
+
+    const stopNodes = stops.map(stop => {
+      const node = this.doc.createElementNS(svgNs, 'stop');
+      node.setAttribute('offset', (stop.offset * 100) + '%');
+      node.setAttribute('stop-opacity', stop.color.a);
+      node.setAttribute('stop-color', stop.color.withA(1).toString());
+    });
+
+    node.append(...stopNodes);
+
     return node;
   }
 
