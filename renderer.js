@@ -102,9 +102,9 @@ export default class Stage0Renderer {
     const node = this.getNodeForMorph(morph);
 
     const submorphsToRender = morph.submorphs;
-    const alredayRenderedSubmorphs = morph.renderingState.renderedMorphs;
+    const alreadyRenderedSubmorphs = morph.renderingState.renderedMorphs;
 
-    const newlyRenderedSubmorphs = withoutAll(submorphsToRender, alredayRenderedSubmorphs);
+    const newlyRenderedSubmorphs = withoutAll(submorphsToRender, alreadyRenderedSubmorphs);
 
     let skipWrapping = morph.layout && morph.layout.renderViaCSS;
     if (skipWrapping) {
@@ -117,18 +117,20 @@ export default class Stage0Renderer {
       keyed('key',
         node,
         // TODO: can this be optimized?
-        wasWrapped ? [] : alredayRenderedSubmorphs,
+        wasWrapped ? [] : alreadyRenderedSubmorphs,
         submorphsToRender,
         item => this.renderMorph(item)
       );
     } else {
       const wrapped = node.firstChild && node.firstChild.getAttribute('key').includes('submorphs');
       if (!wrapped) {
+        node.replaceChildren();
         node.appendChild(this.submorphWrapperNodeFor(morph));
       }
       keyed('key',
         node.firstChild,
-        alredayRenderedSubmorphs,
+        // TODO: can this be optimized?
+        wrapped ? alreadyRenderedSubmorphs : [],
         submorphsToRender,
         item => this.renderMorph(item)
       );
