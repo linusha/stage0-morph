@@ -99,8 +99,10 @@ export default class Stage0Renderer {
 
     for (let submorph of morph.submorphs) {
       const submorphNode = this.renderMorph(submorph);
-      if (skipWrapping) node.appendChild(submorphNode);
-      else wrapperNode.appendChild(submorphNode);
+      if (skipWrapping) {
+        if (!morph.isPath) node.appendChild(submorphNode);
+        else node.insertBefore(submorphNode, node.firstChild);
+      } else wrapperNode.appendChild(submorphNode);
       morph.renderingState.renderedMorphs.push(submorph);
     }
 
@@ -477,8 +479,7 @@ export default class Stage0Renderer {
     innerSvg.append(...svgElements);
     innerSvg.appendChild(defNode);
     node.appendChild(innerSvg);
-    // TODO
-    // this.renderSubmorphs(morph),
+
     const outerSvg = this.doc.createElementNS(svgNs, 'svg');
     outerSvg.style.position = 'absolute';
     outerSvg.style.overflow = 'visible';
