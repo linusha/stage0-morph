@@ -4,7 +4,7 @@ import keyed from 'esm://cache/stage0@0.0.25/keyed';
 
 import { applyAttributesToNode, applyStylingToNode } from './helpers.js';
 import { withoutAll } from 'lively.lang/array.js';
-import { string, num, obj } from 'lively.lang';
+import { string, arr, num, obj } from 'lively.lang';
 import { getSvgVertices } from 'lively.morphic/rendering/property-dom-mapping.js';
 import { defaultStyle, svgAttributes } from 'lively.morphic/rendering/morphic-default.js';
 
@@ -461,7 +461,7 @@ export default class Stage0Renderer {
       outerSvg.setAttribute(prop, svgAttrs[prop]);
     }
 
-    if (controlPoints.length > 0) outerSvg.appendChild(controlPoints);
+    if (!arr.equals(controlPoints, [])) outerSvg.appendChild(controlPoints);
 
     node.appendChild(outerSvg);
     return node;
