@@ -6,7 +6,7 @@ import { applyAttributesToNode, applyStylingToNode } from './helpers.js';
 import { withoutAll } from 'lively.lang/array.js';
 import { string, num, obj } from 'lively.lang';
 import { getSvgVertices } from 'lively.morphic/rendering/property-dom-mapping.js';
-import { defaultStyle } from 'lively.morphic/rendering/morphic-default.js';
+import { defaultStyle, svgAttributes } from 'lively.morphic/rendering/morphic-default.js';
 
 const svgNs = 'http://www.w3.org/2000/svg';
 
@@ -76,14 +76,16 @@ export default class Stage0Renderer {
   renderMorph (morph) {
     let node;
     node = this.renderMap.get(morph);
-
+    // Polygon is a subclass of Path
     if (!node) {
       node = morph.getNodeForRenderer(this); // returns a DOM node as specified by the morph
-      this.renderMap.set(morph, node);
+      if (!morph.isPath) this.renderMap.set(morph, node);
     }
 
-    applyAttributesToNode(morph, node);
-    applyStylingToNode(morph, node);
+    if (!morph.isPath) {
+      applyAttributesToNode(morph, node);
+      applyStylingToNode(morph, node);
+    }
 
     const skipWrapping = morph.layout && morph.layout.renderViaCSS;
     const wrapperNode = this.submorphWrapperNodeFor(morph);
@@ -294,15 +296,22 @@ export default class Stage0Renderer {
   // -=-=-=-=-=-=-=-=-=-      
   nodeForPath (morph) {
     const { id, startMarker, endMarker, showControlPoints, origin, drawnProportion, borderWidth } = morph;
+
     const d = getSvgVertices(morph.vertices);
+
     const el = this.doc.createElementNS(svgNs, 'path');
     el.setAttribute('id', 'svg' + morph.id);
 
+    // -=-=-=-=-=-=-=-=-
+    // PATH ATTRIBUTES
+    // -=-=-=-=-=-=-=-=-
+    // TODO: SVG Animation is missing, needs to be moved from hooks
     if (morph.drawnProportion !== 0) el.setAttribute('mask', 'url(#mask' + morph.id + ')');
     else el.setAttribute('mask', '');
 
     const { vertices, fill, borderColor } = morph;
 
+    // addPathAttributes
     if (vertices.length) {
       el.setAttribute('d', getSvgVertices(vertices));
     }
@@ -323,6 +332,9 @@ export default class Stage0Renderer {
       ? 'url(#gradient-borderColor' + id + ')'
       : borderColor.valueOf().toString());
 
+    // -=-=-=-=-=-=-=-=-
+    // PATH ATTRIBUTES END
+    // -=-=-=-=-=-=-=-=-
     const maskNode = this.doc.createElementNS(svgNs, 'mask');
     const innerRect = this.doc.createElementNS(svgNs, 'rect');
     const firstInnerPath = this.doc.createElementNS(svgNs, 'path');
@@ -369,13 +381,13 @@ export default class Stage0Renderer {
 
     if (startMarker) {
       if (!startMarker.id) startMarker.id = 'start-marker';
-      el.attributes['marker-start'] = `url(#${morph.id}-${startMarker.id})`;
+      el.setAttribute('marker-start', `url(#${morph.id}-${startMarker.id})`);
       markers = [];
       markers.push(this._renderPath_Marker(morph, startMarker));
     }
     if (endMarker) {
       if (!endMarker.id) endMarker.id = 'end-marker';
-      el.attributes['marker-end'] = `url(#${morph.id}-${endMarker.id})`;
+      el.setAttribute('marker-end', `url(#${morph.id}-${endMarker.id})`);
       if (!markers) markers = [];
       markers.push(this._renderPath_Marker(morph, endMarker));
     }
@@ -390,12 +402,13 @@ export default class Stage0Renderer {
   }
 
   nodeForSVGMorph (morph, svgEl, markers, controlPoints = []) {
+    const { attributes: svgAttrs } = svgAttributes(morph);
     const { width, height } = morph.innerBounds();
-    let defs; const svgElements = [];
+    let defs, defNode;
+    const svgElements = [];
 
     if (morph.fill && morph.fill.isGradient) {
       if (!defs) defs = [];
-      // TODO
       defs.push(this.renderGradient('fill' + morph.id, morph.extent, morph.fill));
     }
     if (morph.borderColor && morph.borderColor.valueOf().isGradient) {
@@ -408,7 +421,10 @@ export default class Stage0Renderer {
     }
 
     svgElements.push(svgEl);
-    if (defs) svgElements.push(h`<defs></defs>`.append(...defs));
+    if (defs) {
+      defNode = this.doc.createElementNS(svgNs, 'defs');
+      defNode.append(...defs);
+    }
 
     const basicStyle = obj.select(defaultStyle(morph), ['position', 'filter', 'display', 'opacity',
       'transform', 'top', 'left', 'transformOrigin', 'cursor', 'overflow']);
@@ -419,23 +435,31 @@ export default class Stage0Renderer {
       name = name.toLowerCase();
       node.style.setProperty(name, basicStyle[prop]);
     }
-    node.style.width = width + 'px';
-    node.style.height = height + 'px';
-    node.style['pointer-events'] = morph.reactsToPointer ? 'auto' : 'none';
-    const innerSvg = h`<svg version='1.1'></svg>`;
+    node.style.setProperty('width', width + 'px');
+    node.style.setProperty('height', height + 'px');
+    node.style.setProperty('pointer-events', morph.reactsToPointer ? 'auto' : 'none');
+
+    applyAttributesToNode(morph, node);
+
+    const innerSvg = this.doc.createElementNS(svgNs, 'svg');
     innerSvg.style.position = 'absolute';
     innerSvg.style['stroke-linejoin'] = morph.cornerStyle || 'mint';
     innerSvg.style['stroke-linecap'] = morph.endStyle || 'round';
     innerSvg.style.overflow = 'visible';
+    for (let prop in svgAttrs) {
+      innerSvg.setAttribute(prop, svgAttrs[prop]);
+    }
     innerSvg.append(...svgElements);
+    innerSvg.appendChild(defNode);
     node.appendChild(innerSvg);
     // TODO
     // this.renderSubmorphs(morph),
-    const outerSvg = h`<svg version='1.1'></svg>`;
+    const outerSvg = this.doc.createElementNS(svgNs, 'svg');
     outerSvg.style.position = 'absolute';
-    outerSvg.style['stroke-linejoin'] = morph.cornerStyle || 'mint';
-    outerSvg.style['stroke-linecap'] = morph.endStyle || 'round';
     outerSvg.style.overflow = 'visible';
+    for (let prop in svgAttrs) {
+      outerSvg.setAttribute(prop, svgAttrs[prop]);
+    }
 
     if (controlPoints.length > 0) outerSvg.appendChild(controlPoints);
 
