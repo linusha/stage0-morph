@@ -10,6 +10,8 @@ stage0m.openInWorld()
 stage0m.remove()
 // TODO: for these morphs hook are not toggled i believe!
 const subsubmorph = new Morph({name: 'subsubmorph', fill: Color.pink,extent: pt(20,20)})
+stage0m.addMorph(subsubmorph)
+$world.addMorph(subsubmorph)
 const submorph = new Morph({name: 'submorph', fill: Color.red,extent: pt(40,40),position: pt(30,30),submorphs:[subsubmorph]})
 const submorph2 = new Morph({name: 'submorph2', fill: Color.black ,extent: pt(10,10) ,position: pt(40,40)})
 const newMorph = new Morph({name: 'newMorph', fill: Color.green, extent: pt(100,100), borderColor: Color.red, borderWidth: 3, submorphs: [submorph, submorph2]})

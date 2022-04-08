@@ -87,9 +87,15 @@ export default class Stage0Renderer {
       applyStylingToNode(morph, node);
     }
 
+    if (morph.submorphs.length === 0) return node;
+
     const skipWrapping = morph.layout && morph.layout.renderViaCSS;
     const wrapperNode = this.submorphWrapperNodeFor(morph);
-    if (!skipWrapping) node.appendChild(wrapperNode);
+
+    if (!skipWrapping) {
+      if (!morph.isPath) node.appendChild(wrapperNode);
+      else node.insertBefore(wrapperNode, node.firstChild);
+    }
 
     for (let submorph of morph.submorphs) {
       const submorphNode = this.renderMorph(submorph);
@@ -109,6 +115,24 @@ export default class Stage0Renderer {
     const node = this.getNodeForMorph(morph);
 
     const submorphsToRender = morph.submorphs;
+
+    // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+    // Optimization for when a morph has no longer any submorphs.
+    // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+    if (morph.submorphs.length === 0) {
+      if (morph.isPath) {
+        // multiple child nodes are needed for displayment of the morph
+        node.childNodes.forEach(n => {
+          if (n.getAttribute('key').includes('submorphs')) n.remove();
+        });
+      } else {
+        node.replaceChildren();
+      }
+      morph.renderingState.renderedMorphs = morph.submorphs.slice();
+      morph.renderingState.hasStructuralChanges = false;
+      return;
+    }
+
     const alreadyRenderedSubmorphs = morph.renderingState.renderedMorphs;
 
     const newlyRenderedSubmorphs = withoutAll(submorphsToRender, alreadyRenderedSubmorphs);
@@ -116,6 +140,7 @@ export default class Stage0Renderer {
     let skipWrapping = morph.layout && morph.layout.renderViaCSS;
     if (skipWrapping) {
       let wasWrapped;
+      // We have previously rendered this morph without skipping the wrapping
       if (node.firstChild && node.firstChild.getAttribute('key').includes('submorphs')) {
         node.firstChild.remove();
         wasWrapped = true;
