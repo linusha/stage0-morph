@@ -43,6 +43,10 @@ export default class Stage0Renderer {
     const morphsToHandle = this.owner.withAllSubmorphsDo(m => m);
 
     for (let morph of morphsToHandle) {
+      if (morph.renderingState.hasCSSLayoutChange) this.renderLayoutChange(morph);
+    }
+
+    for (let morph of morphsToHandle) {
       if (morph.renderingState.hasStructuralChanges) this.morphsWithStructuralChanges.push(morph);
       if (morph.renderingState.needsRerender) this.renderedMorphsWithChanges.push(morph);
       if (morph.renderingState.animationAdded) this.renderedMorphsWithAnimations.push(morph);
@@ -110,6 +114,37 @@ export default class Stage0Renderer {
     return node;
   }
 
+  renderLayoutChange (morph) {
+    const node = this.getNodeForMorph(morph);
+
+    // TODO: this might never be an actual possibility, once the stage0renderer is the only renderer in town
+    // This was introduced as a fix for when a morph with an active CSS layout was dropped into the Stage0Morph 
+    if (!node) return;
+
+    let layoutAdded = morph.layout && morph.layout.renderViaCSS;
+
+    if (layoutAdded) {
+      // in case we have had a css layout already, this can be skipped
+      if (node.firstChild && node.firstChild.getAttribute('key').includes('submorphs')) {
+        node.append(...node.firstChild.childNodes);
+        node.childNodes.forEach((n) => {
+          if (n.getAttribute('key').includes('submorphs')) n.remove();
+        });
+      }
+    } else { // no css layout applied at the moment
+      const wrapped = node.firstChild && node.firstChild.getAttribute('key').includes('submorphs');
+      // when no css layout was applied previously, we are fine
+      if (!wrapped) {
+        const wrapper = node.appendChild(this.submorphWrapperNodeFor(morph));
+        node.childNodes.forEach((n) => {
+          if (n !== wrapper) wrapper.appendChild(n);
+        });
+      }
+    }
+    morph.renderingState.hasCSSLayoutChange = false;
+    morph.submorphs.forEach(s => s.renderingState.needsRerender = true);
+  }
+
   /**
    * Updates the DOM structure starting from the node for `morph`. Does not take styling into account. Will add/remove nodes to the dom as necessary.
    * Thus, this function is triggered for morphs that either have submorphs added or removed or that have a layout applied.
@@ -129,7 +164,7 @@ export default class Stage0Renderer {
     if (morph.submorphs.length === 0) {
       if (morph.isPath) {
         // multiple child nodes are needed for displayment of the morph
-        node.childNodes.map(n => {
+        node.childNodes.forEach(n => {
           if (n.getAttribute('key').includes('submorphs')) n.remove();
         });
       } else {
@@ -145,15 +180,6 @@ export default class Stage0Renderer {
 
     let skipWrapping = morph.layout && morph.layout.renderViaCSS;
     if (skipWrapping) {
-      // We have previously rendered this morph without skipping the wrapping
-      // Move the submorphs up from the wrapper to the actual node of the morph.
-      if (node.firstChild && node.firstChild.getAttribute('key').includes('submorphs')) {
-        node.append(...node.firstChild.childNodes);
-        node.childNodes.map((n) => {
-          if (n.getAttributes('key').includes('submorphs')) n.remove();
-        });
-      }
-
       keyed('id',
         node,
         alreadyRenderedSubmorphs,
@@ -162,12 +188,7 @@ export default class Stage0Renderer {
       );
     } else {
       const wrapped = node.firstChild && node.firstChild.getAttribute('key').includes('submorphs');
-      if (!wrapped) {
-        const wrapper = node.appendChild(this.submorphWrapperNodeFor(morph));
-        node.childNodes.forEach((n) => {
-          if (n !== wrapper) wrapper.appendChild(n);
-        });
-      }
+      if (!wrapped) node.appendChild(this.submorphWrapperNodeFor(morph));
       keyed('id',
         node.firstChild,
         alreadyRenderedSubmorphs,
