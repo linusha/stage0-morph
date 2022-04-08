@@ -82,6 +82,7 @@ export default class Stage0Renderer {
       if (!morph.isPath) this.renderMap.set(morph, node);
     }
 
+    // TODO: needs to be fixed once the correct abstraction for polygons is found
     if (!morph.isPath) {
       applyAttributesToNode(morph, node);
       applyStylingToNode(morph, node);
@@ -111,9 +112,13 @@ export default class Stage0Renderer {
 
   /**
    * Updates the DOM structure starting from the node for `morph`. Does not take styling into account. Will add/remove nodes to the dom as necessary.
+   * Thus, this function is triggered for morphs that either have submorphs added or removed or that have a layout applied.
+   * Going through this routine for morphs that have a layout added/removed is necessary, since we need to wrap/unwrap submorphs in a separate DOM node.
    * @param { Morph } morph - The morph which has had changed to its submorph hierarchy.
    */
   renderStructuralChanges (morph) {
+    debugger;
+    // Invariant: Morph has been rendered previously.
     const node = this.getNodeForMorph(morph);
 
     const submorphsToRender = morph.submorphs;
@@ -124,7 +129,7 @@ export default class Stage0Renderer {
     if (morph.submorphs.length === 0) {
       if (morph.isPath) {
         // multiple child nodes are needed for displayment of the morph
-        node.childNodes.forEach(n => {
+        node.childNodes.map(n => {
           if (n.getAttribute('key').includes('submorphs')) n.remove();
         });
       } else {
@@ -134,37 +139,38 @@ export default class Stage0Renderer {
       morph.renderingState.hasStructuralChanges = false;
       return;
     }
-
+    // Due to the early return, we know that we have submorphs here.
     const alreadyRenderedSubmorphs = morph.renderingState.renderedMorphs;
-
     const newlyRenderedSubmorphs = withoutAll(submorphsToRender, alreadyRenderedSubmorphs);
 
     let skipWrapping = morph.layout && morph.layout.renderViaCSS;
     if (skipWrapping) {
-      let wasWrapped;
       // We have previously rendered this morph without skipping the wrapping
+      // Move the submorphs up from the wrapper to the actual node of the morph.
       if (node.firstChild && node.firstChild.getAttribute('key').includes('submorphs')) {
-        node.firstChild.remove();
-        wasWrapped = true;
+        node.append(...node.firstChild.childNodes);
+        node.childNodes.map((n) => {
+          if (n.getAttributes('key').includes('submorphs')) n.remove();
+        });
       }
 
-      keyed('key',
+      keyed('id',
         node,
-        // TODO: can this be optimized?
-        wasWrapped ? [] : alreadyRenderedSubmorphs,
+        alreadyRenderedSubmorphs,
         submorphsToRender,
         item => this.renderMorph(item)
       );
     } else {
       const wrapped = node.firstChild && node.firstChild.getAttribute('key').includes('submorphs');
       if (!wrapped) {
-        node.replaceChildren();
-        node.appendChild(this.submorphWrapperNodeFor(morph));
+        const wrapper = node.appendChild(this.submorphWrapperNodeFor(morph));
+        node.childNodes.forEach((n) => {
+          if (n !== wrapper) wrapper.appendChild(n);
+        });
       }
-      keyed('key',
+      keyed('id',
         node.firstChild,
-        // TODO: can this be optimized?
-        wrapped ? alreadyRenderedSubmorphs : [],
+        alreadyRenderedSubmorphs,
         submorphsToRender,
         item => this.renderMorph(item)
       );
@@ -195,6 +201,7 @@ export default class Stage0Renderer {
    * Assumes that a DOM node for the given morph already exists and changes the attributes of this node according to the current style definition of the morph.
    * @param { Morph } morph - The morph for which to update the rendering.
    */
+  // TODO: this needs more advanced logic for polygons, maybe it makes sense to dispatch this back to the morph later on
   renderStylingChanges (morph) {
     const node = this.getNodeForMorph(morph);
     applyStylingToNode(morph, node);
@@ -322,7 +329,7 @@ export default class Stage0Renderer {
   // SVGs and Polygons
   // -=-=-=-=-=-=-=-=-=-      
   nodeForPath (morph) {
-    const { id, startMarker, endMarker, showControlPoints, origin, drawnProportion, borderWidth } = morph;
+    const { id, startMarker, endMarker, showControlPoints, drawnProportion, borderWidth } = morph;
 
     const d = getSvgVertices(morph.vertices);
 
@@ -333,7 +340,7 @@ export default class Stage0Renderer {
     // PATH ATTRIBUTES
     // -=-=-=-=-=-=-=-=-
     // TODO: SVG Animation is missing, needs to be moved from hooks
-    if (morph.drawnProportion !== 0) el.setAttribute('mask', 'url(#mask' + morph.id + ')');
+    if (drawnProportion !== 0) el.setAttribute('mask', 'url(#mask' + morph.id + ')');
     else el.setAttribute('mask', '');
 
     const { vertices, fill, borderColor } = morph;
@@ -380,7 +387,7 @@ export default class Stage0Renderer {
     firstInnerPath.setAttribute('d', d);
     firstInnerPath.setAttribute('stroke', 'black');
     firstInnerPath.setAttribute('fill', 'none');
-    if (morph.drawnProportion) {
+    if (drawnProportion) {
       firstInnerPath.setAttribute('stroke-width', morph.borderWidth.valueOf() + 1);
       firstInnerPath.setAttribute('stroke-dasharray', firstInnerPath.getTotalLength());
       firstInnerPath.setAttribute('stroke-dashoffset', firstInnerPath.getTotalLength() * (1 - morph.drawnProportion));
@@ -389,7 +396,7 @@ export default class Stage0Renderer {
     secondInnerPath.setAttribute('d', d);
     secondInnerPath.setAttribute('stroke', 'white');
     secondInnerPath.setAttribute('fill', 'none');
-    if (morph.drawnProportion) {
+    if (drawnProportion) {
       firstInnerPath.setAttribute('stroke-width', morph.borderWidth.valueOf() + 1);
       firstInnerPath.setAttribute('stroke-dasharray', firstInnerPath.getTotalLength());
       // (-1 + (1 - morph.drawnProportion))
@@ -494,6 +501,13 @@ export default class Stage0Renderer {
   }
 
   _renderPath_ControlPoints (morph) {
+    const {
+      vertices,
+      borderWidth, showControlPoints, _controlPointDrag
+    } = morph;
+    let fill = 'red';
+    let radius = borderWidth === 0 ? 6 : borderWidth + 2;
+
     // HELPER FUNCTION
     const circ = (cx, cy, n, merge, type, isCtrl) => {
       let r = merge ? 12 : Math.min(8, Math.max(3, radius));
@@ -520,13 +534,7 @@ export default class Stage0Renderer {
       return node;
     };
 
-    const {
-      vertices,
-      borderWidth, showControlPoints, _controlPointDrag
-    } = morph;
-    let radius = borderWidth == 0 ? 6 : borderWidth + 2;
-    let fill = 'red';
-    const rendered = []; const i = 0;
+    const rendered = [];
 
     if (typeof showControlPoints === 'object') {
       const { radius: r, fill: f } = showControlPoints;
@@ -544,7 +552,7 @@ export default class Stage0Renderer {
         left_cp = n;
       }
 
-      for (i = 1; i < vertices.length - 1; i++) {
+      for (let i = 1; i < vertices.length - 1; i++) {
         const vertex = vertices[i];
         const { isSmooth, x, y, controlPoints: { previous: p, next: n } } = vertex;
         const merge = _controlPointDrag && _controlPointDrag.maybeMerge && _controlPointDrag.maybeMerge.includes(i);
@@ -580,7 +588,7 @@ export default class Stage0Renderer {
   }
 
   _renderPath_Marker (morph, markerSpec) {
-    return specTo_h_svg(markerSpec);
+    return specTo_h_svg(markerSpec); // eslint-disable-line no-use-before-define
 
     // TODO: What the hell is this?
     function specTo_h_svg (spec) {

@@ -2,7 +2,7 @@ import vdom from 'virtual-dom';
 const { diff, patch, create: createElement } = vdom;
 
 /**
- * Heavily based on the `CustomVNode` used to render HTMLMorphs and IFrameMorphs
+ * Needed to inject a a Morph which is (as well as its submorphs) rendered with Stage0 inside of the default rendering loop with the vdom.
  */
 export default class Stage0VNode {
   /**
@@ -13,7 +13,7 @@ export default class Stage0VNode {
     this.morphicRenderer = renderer;
     this.stage0Renderer = morph.renderer;
     this.morphVtree = null;
-    // TODO: necessary? 
+
     this.key = 'custom-stage0morph';
   }
 
@@ -24,13 +24,14 @@ export default class Stage0VNode {
     return this.morphVtree;
   }
 
+  // VDOM interface
   init () {
     const elem = this.renderMorph();
-    // debugger;
     return elem;
   }
 
   /**
+   * Part of the vdom interface.
    * The function called when the widget is being updated.
    * @see{ @link https://github.com/Matt-Esch/virtual-dom/blob/master/docs/widget.md}
    */
@@ -44,6 +45,7 @@ export default class Stage0VNode {
     return null;
   }
 
+  // VDOM Interface
   destroy (domNode) {
     // no custom operation 
   }
