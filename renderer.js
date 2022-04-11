@@ -1,6 +1,6 @@
 
 import h from 'esm://cache/stage0@0.0.25';
-import keyed from 'esm://cache/stage0@0.0.25/keyed';
+import { keyed, noOpUpdate } from 'esm://cache/stage0@0.0.25/keyed';
 
 import { applyAttributesToNode, applyStylingToNode } from './helpers.js';
 import { withoutAll } from 'lively.lang/array.js';
@@ -42,7 +42,7 @@ export default class Stage0Renderer {
 
     const morphsToHandle = this.owner.withAllSubmorphsDo(m => m);
 
-    // Handling these first allows us to assume correct wrapping!
+    // Handling these first allows us to assume correct wrapping, when we have submorphs already!
     for (let morph of morphsToHandle) {
       if (morph.renderingState.hasCSSLayoutChange) this.renderLayoutChange(morph);
     }
@@ -106,8 +106,8 @@ export default class Stage0Renderer {
       const submorphNode = this.renderMorph(submorph);
       if (skipWrapping) {
         if (!morph.isPath) node.appendChild(submorphNode);
-        else node.insertBefore(submorphNode, node.firstChild);
-      } else wrapperNode.appendChild(submorphNode);
+        else node.insertBefore(submorphNode, node.lastChild);
+      } else node.firstChild.nextSibling.appendChild(submorphNode);
       morph.renderingState.renderedMorphs.push(submorph);
     }
 
@@ -116,12 +116,15 @@ export default class Stage0Renderer {
 
   installWrapperNodeFor (morph, node, fixChildNodes = false) {
     const wrapperNode = this.submorphWrapperNodeFor(morph);
-    const wrapped = node.firstChild && node.firstChild.getAttribute('key').includes('submorphs');
+    const children = Array.from(node.children);
+
+    const wrapped = children.some(c => c.getAttribute('key') && c.getAttribute('key').includes('submorphs'));
     if (!wrapped) {
       if (!morph.isPath) node.appendChild(wrapperNode);
-      else node.insertBefore(wrapperNode, node.firstChild);
+      else node.insertBefore(wrapperNode, node.lastChild);
       if (fixChildNodes) {
         const childNodes = Array.from(node.childNodes);
+        if (morph.isPath) { childNodes.shift(); childNodes.pop(); } else if (morph.isImage || morph.isCanvas || morph.isHTMLMorph) childNodes.shift();
         childNodes.forEach((n) => {
           if (n !== wrapperNode) wrapperNode.appendChild(n);
         });
@@ -134,14 +137,25 @@ export default class Stage0Renderer {
    * Also removes the wrapper Node.
    * @param {Node} node - Node of the morph for which submorphs should get unwrapped.
    */
-  unwrapSubmorphNodesIfNecessary (node) {
+  // TODO: this is not working for polygons
+  unwrapSubmorphNodesIfNecessary (node, morph) {
     // do nothing if submorph nodes are not wrapped
     // e.g. in case we have had a css layout already, this can be skipped
-    if (node.firstChild && node.firstChild.getAttribute('key').includes('submorphs')) {
-      node.append(...node.firstChild.childNodes);
-      node.childNodes.forEach((n) => {
-        if (n.getAttribute('key').includes('submorphs')) n.remove();
-      });
+    let children = Array.from(node.children);
+    const wrapped = children.some(c => c.getAttribute('key') && c.getAttribute('key').includes('submorphs'));
+    if (wrapped) {
+      if (!morph.isPath) {
+        node.append(...node.lastChild.childNodes);
+        children = Array.from(node.children);
+        children.forEach((n) => {
+          if (n.getAttribute('key') && n.getAttribute('key').includes('submorphs')) n.remove();
+        });
+      } else {
+        const wrapperNode = node.firstChild.nextSibling;
+        let children = Array.from(wrapperNode.children);
+        children.forEach((n) => node.insertBefore(n, node.lastChild));
+        wrapperNode.remove();
+      }
     }
   }
 
@@ -156,7 +170,7 @@ export default class Stage0Renderer {
     let layoutAdded = morph.layout && morph.layout.renderViaCSS;
 
     if (layoutAdded) {
-      this.unwrapSubmorphNodesIfNecessary(node);
+      this.unwrapSubmorphNodesIfNecessary(node, morph);
     } else { // no css layout applied at the moment
       this.installWrapperNodeFor(morph, node, true);
     }
@@ -171,7 +185,6 @@ export default class Stage0Renderer {
    * @param { Morph } morph - The morph which has had changed to its submorph hierarchy.
    */
   renderStructuralChanges (morph) {
-    debugger;
     // Invariant: Morph has been rendered previously.
     const node = this.getNodeForMorph(morph);
 
@@ -182,9 +195,10 @@ export default class Stage0Renderer {
     // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
     if (morph.submorphs.length === 0) {
       if (morph.isPath) {
-        // multiple child nodes are needed for displayment of the morph
+        // two SVG nodes are necessary
+        // remove everything else, in the case that we have unwrapped submorph nodes
         node.childNodes.forEach(n => {
-          if (n.getAttribute('key').includes('submorphs')) n.remove();
+          if (n.tagName !== 'SVG') n.remove();
         });
       } else {
         node.replaceChildren();
@@ -198,17 +212,42 @@ export default class Stage0Renderer {
     const newlyRenderedSubmorphs = withoutAll(submorphsToRender, alreadyRenderedSubmorphs);
 
     let skipWrapping = morph.layout && morph.layout.renderViaCSS;
+    if (morph.isPath) {
+      if (skipWrapping) {
+        const [firstSvg, secondSvg] = Array.from(node.children).filter(n => n.tagName === 'SVG');
+        keyed('id',
+          node,
+          alreadyRenderedSubmorphs,
+          submorphsToRender,
+          item => this.renderMorph(item),
+          noOpUpdate,
+          firstSvg, // before list
+          secondSvg// after list
+        );
+      } else {
+        this.installWrapperNodeFor(morph, node);
+        keyed('id',
+          node.firstChild.nextSibling,
+          alreadyRenderedSubmorphs,
+          submorphsToRender,
+          item => this.renderMorph(item)
+        );
+      }
+    } else // morph is not path
     if (skipWrapping) {
+      const beforeElem = node.firstChild;
       keyed('id',
         node,
         alreadyRenderedSubmorphs,
         submorphsToRender,
-        item => this.renderMorph(item)
+        item => this.renderMorph(item),
+        noOpUpdate,
+        (morph.isCanvas || morph.isHTMLMorph || morph.isImage) ? beforeElem : null// before list
       );
     } else {
       this.installWrapperNodeFor(morph, node);
       keyed('id',
-        node.firstChild,
+        node.lastChild,
         alreadyRenderedSubmorphs,
         submorphsToRender,
         item => this.renderMorph(item)
