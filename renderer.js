@@ -42,6 +42,7 @@ export default class Stage0Renderer {
 
     const morphsToHandle = this.owner.withAllSubmorphsDo(m => m);
 
+    // Handling these first allows us to assume correct wrapping!
     for (let morph of morphsToHandle) {
       if (morph.renderingState.hasCSSLayoutChange) this.renderLayoutChange(morph);
     }
@@ -95,11 +96,10 @@ export default class Stage0Renderer {
     if (morph.submorphs.length === 0) return node;
 
     const skipWrapping = morph.layout && morph.layout.renderViaCSS;
-    const wrapperNode = this.submorphWrapperNodeFor(morph);
 
+    let wrapperNode;
     if (!skipWrapping) {
-      if (!morph.isPath) node.appendChild(wrapperNode);
-      else node.insertBefore(wrapperNode, node.firstChild);
+      wrapperNode = this.installWrapperNodeFor(morph, node);
     }
 
     for (let submorph of morph.submorphs) {
@@ -114,32 +114,51 @@ export default class Stage0Renderer {
     return node;
   }
 
+  installWrapperNodeFor (morph, node, fixChildNodes = false) {
+    const wrapperNode = this.submorphWrapperNodeFor(morph);
+    const wrapped = node.firstChild && node.firstChild.getAttribute('key').includes('submorphs');
+    if (!wrapped) {
+      if (!morph.isPath) node.appendChild(wrapperNode);
+      else node.insertBefore(wrapperNode, node.firstChild);
+      if (fixChildNodes) {
+        const childNodes = Array.from(node.childNodes);
+        childNodes.forEach((n) => {
+          if (n !== wrapperNode) wrapperNode.appendChild(n);
+        });
+      }
+      return wrapperNode;
+    }
+  }
+
+  /**
+   * Also removes the wrapper Node.
+   * @param {Node} node - Node of the morph for which submorphs should get unwrapped.
+   */
+  unwrapSubmorphNodesIfNecessary (node) {
+    // do nothing if submorph nodes are not wrapped
+    // e.g. in case we have had a css layout already, this can be skipped
+    if (node.firstChild && node.firstChild.getAttribute('key').includes('submorphs')) {
+      node.append(...node.firstChild.childNodes);
+      node.childNodes.forEach((n) => {
+        if (n.getAttribute('key').includes('submorphs')) n.remove();
+      });
+    }
+  }
+
   renderLayoutChange (morph) {
     const node = this.getNodeForMorph(morph);
 
     // TODO: this might never be an actual possibility, once the stage0renderer is the only renderer in town
     // This was introduced as a fix for when a morph with an active CSS layout was dropped into the Stage0Morph 
-    if (!node) return;
+    // Second case is for erly returning unneeded wrapping, since we only want to install wrappers when they are needed.
+    if (!node || morph.submorphs.length === 0) return;
 
     let layoutAdded = morph.layout && morph.layout.renderViaCSS;
 
     if (layoutAdded) {
-      // in case we have had a css layout already, this can be skipped
-      if (node.firstChild && node.firstChild.getAttribute('key').includes('submorphs')) {
-        node.append(...node.firstChild.childNodes);
-        node.childNodes.forEach((n) => {
-          if (n.getAttribute('key').includes('submorphs')) n.remove();
-        });
-      }
+      this.unwrapSubmorphNodesIfNecessary(node);
     } else { // no css layout applied at the moment
-      const wrapped = node.firstChild && node.firstChild.getAttribute('key').includes('submorphs');
-      // when no css layout was applied previously, we are fine
-      if (!wrapped) {
-        const wrapper = node.appendChild(this.submorphWrapperNodeFor(morph));
-        node.childNodes.forEach((n) => {
-          if (n !== wrapper) wrapper.appendChild(n);
-        });
-      }
+      this.installWrapperNodeFor(morph, node, true);
     }
     morph.renderingState.hasCSSLayoutChange = false;
     morph.submorphs.forEach(s => s.renderingState.needsRerender = true);
@@ -187,8 +206,7 @@ export default class Stage0Renderer {
         item => this.renderMorph(item)
       );
     } else {
-      const wrapped = node.firstChild && node.firstChild.getAttribute('key').includes('submorphs');
-      if (!wrapped) node.appendChild(this.submorphWrapperNodeFor(morph));
+      this.installWrapperNodeFor(morph, node);
       keyed('id',
         node.firstChild,
         alreadyRenderedSubmorphs,
