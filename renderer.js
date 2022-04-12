@@ -282,6 +282,11 @@ export default class Stage0Renderer {
   // TODO: this needs more advanced logic for polygons, maybe it makes sense to dispatch this back to the morph later on
   renderStylingChanges (morph) {
     const node = this.getNodeForMorph(morph);
+
+    if (morph.patchSpecialProps) {
+      morph.patchSpecialProps(node, this);
+    }
+
     applyStylingToNode(morph, node);
 
     // TODO: this needs to call the after render hooks later on
@@ -398,8 +403,6 @@ export default class Stage0Renderer {
     innernode.style.left = 0;
     innernode.style.width = '100%';
     innernode.style.height = '100%';
-    innernode.src = url;
-    innernode.alt = morph.tooltip || '';
     return node;
   }
 
