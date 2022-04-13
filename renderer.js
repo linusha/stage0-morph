@@ -113,6 +113,7 @@ export default class Stage0Renderer {
 
   installWrapperNodeFor (morph, node, fixChildNodes = false) {
     const wrapperNode = this.submorphWrapperNodeFor(morph);
+    if (morph.isPolygon) this.renderPolygonClipMode(morph, wrapperNode);
     const children = Array.from(node.children);
 
     const wrapped = children.some(c => c.getAttribute('id') && c.getAttribute('id').includes('submorphs'));
@@ -303,13 +304,8 @@ export default class Stage0Renderer {
     node.style.setProperty('left', `${oX - (morph.isPath ? 0 : borderWidthLeft)}px`);
     node.style.setProperty('top', `${oY - (morph.isPath ? 0 : borderWidthTop)}px`);
     if (morph.isPolygon) {
-      // TODO: extract (partially) into a method that reacts to changed clipmode and then handles the clippath
       node.style.setProperty('height', '100%');
       node.style.setProperty('width', '100%');
-      node.style.setProperty('overflow', `${morph.clipMode}`);
-      if (morph.clipMode !== 'visible') {
-        node.setAttribute('clip-path', `url(#clipPath${morph.id})`);
-      }
     }
 
     return node;
@@ -435,15 +431,6 @@ export default class Stage0Renderer {
   // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
   // DYNAMICALLY RENDER POLYGON PROPS
   // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-
-  renderPolygonSubmorphClipping (morph) {
-    // add to defs node in div > svg >> defs
-    const clipPath = this.doc.createElementNS(svgNs, 'clipPath');
-    clipPath.setAttribute('id', 'clipPath' + morph.id);
-    const clipPathInner = this.doc.createElementNS(svgNs, 'path');
-    clipPath.appendChild(clipPathInner);
-  }
-
   renderControlPoints (morph) {
     let controlPoints = [];
     if (morph.showControlPoints) {
@@ -463,16 +450,29 @@ export default class Stage0Renderer {
     node.firstChild.firstChild.setAttribute('stroke', morph.borderColor.valueOf().toString());
   }
 
+  renderPolygonClippingPath (morph) {
+    const clipPath = this.doc.createElementNS(svgNs, 'clipPath');
+    clipPath.setAttribute('id', 'clipPath' + morph.id);
+    const clipPathInner = this.doc.createElementNS(svgNs, 'path');
+    clipPath.appendChild(clipPathInner);
+    return clipPath;
+  }
+
   renderPolygonDrawAttribute (morph) {
     // TODO: fix clippath for submorph clipping!
     const node = this.getNodeForMorph(morph);
     const d = getSvgVertices(morph.vertices);
     if (morph.vertices.length) {
       node.firstChild.firstChild.setAttribute('d', d);
-      // const defNode = Array.from(node.firstChild.children).find(n => n.tagName === 'defs');
-      // const clipPath = Array.from(defNode.children).find(n => n.tagName === 'clipPath');
+      const defNode = Array.from(node.firstChild.children).find(n => n.tagName === 'defs');
+      let clipPath = Array.from(defNode.children).find(n => n.tagName === 'clipPath');
+      if (!clipPath) {
+        clipPath = this.renderPolygonClippingPath(morph);
+        defNode.appendChild(clipPath);
+      }
+      clipPath.firstChild.setAttribute('d', d);
       // const mask = Array.from(defNode.children).find(n => n.tagName === 'mask');
-      // clipPath.firstChild.setAttribute('d', d);
+
       // Array.from(mask.children).forEach(n => {
       //  if (n.tagName === 'path') n.setAttribute('d', d);
       // });
@@ -579,6 +579,20 @@ export default class Stage0Renderer {
       n.setAttribute('height', height || 1);
       n.setAttribute('viewBox', [0, 0, width || 1, height || 1].join(' '));
     });
+  }
+
+  renderPolygonClipMode (morph, submorphNode) {
+    if (!submorphNode) {
+      submorphNode = Array.from(this.getNodeForMorph(morph).children).find(n => n.id && n.id.includes('submorphs'));
+    }
+    if (submorphNode) {
+      submorphNode.style.setProperty('overflow', `${morph.clipMode}`);
+      if (morph.clipMode !== 'visible') {
+        submorphNode.style.setProperty('clip-path', `url(#clipPath${morph.id})`);
+      } else {
+        submorphNode.style.setProperty('clip-path', '');
+      }
+    } // when no submorphNode is found we are skipping wrapping or do not have any submorphs
   }
 
   _renderPath_ControlPoints (morph) {
