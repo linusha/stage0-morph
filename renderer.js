@@ -279,8 +279,6 @@ export default class Stage0Renderer {
   renderStylingChanges (morph) {
     const node = this.getNodeForMorph(morph);
 
-    // TODO
-    //  this.renderPolygonMask(morph);
     if (morph.patchSpecialProps) {
       morph.patchSpecialProps(node, this);
     }
@@ -508,25 +506,47 @@ export default class Stage0Renderer {
     firstSvg.style['stroke-linecap'] = morph.endStyle || 'round';
   }
 
+  /**
+   * This inserts/changes a defined mask for a Polygon morph in order to animate its drawn part.
+   * This can result in animations that seem like the SVG is drawing itself.
+   * The way the SVG rendering is implemented, **it is impossible to change the vertices of a SVG when such an animation is running**.
+   * Doing so results in unknown behavior, up to crashing the render process!
+   * This is currently the only known limitation, i.e. other properties can be animated/changed simultaneously.
+   * @see{ @link https://css-tricks.com/svg-line-animation-works/ } for more information regarding how and why this works.
+   * @param { Morph } morph - The Polygon/Path for which the mask should be updated.
+   */
   renderPolygonMask (morph) {
     const node = this.getNodeForMorph(morph);
     const drawnProportion = morph.drawnProportion;
     const pathElem = node.firstChild.firstChild;
     const defNode = node.firstChild.lastChild;
-    // TODO: this can be optimized
-    Array.from(defNode.children).forEach(n => {
-      if (n.tagName === 'mask') n.remove();
-    });
 
-    if (drawnProportion !== 0) pathElem.setAttribute('mask', 'url(#mask' + morph.id + ')');
-    else pathElem.setAttribute('mask', '');
+    let maskNode, innerRect, firstPath, secondPath;
 
-    const maskNode = this.doc.createElementNS(svgNs, 'mask');
-    const innerRect = this.doc.createElementNS(svgNs, 'rect');
-    const firstInnerPath = this.doc.createElementNS(svgNs, 'path');
-    const secondInnerPath = this.doc.createElementNS(svgNs, 'path');
+    for (let n of Array.from(defNode.children)) {
+      if (n.tagName === 'mask') {
+        maskNode = n;
+        break;
+      }
+    }
 
-    maskNode.append(innerRect, firstInnerPath, secondInnerPath);
+    if (drawnProportion === 0) {
+      pathElem.removeAttribute('mask');
+      return;
+    }
+
+    pathElem.setAttribute('mask', 'url(#mask' + morph.id + ')');
+
+    if (maskNode) {
+      innerRect = maskNode.firstChild;
+      firstPath = innerRect.nextSibling;
+      secondPath = firstPath.nextSibling;
+    } else {
+      maskNode = this.doc.createElementNS(svgNs, 'mask');
+      innerRect = this.doc.createElementNS(svgNs, 'rect');
+      firstPath = this.doc.createElementNS(svgNs, 'path');
+      secondPath = this.doc.createElementNS(svgNs, 'path');
+    }
 
     maskNode.setAttribute('id', 'mask' + morph.id);
 
@@ -536,22 +556,20 @@ export default class Stage0Renderer {
     innerRect.setAttribute('width', morph.width + 20);
     innerRect.setAttribute('height', morph.height + 20);
 
-    firstInnerPath.setAttribute('stroke', 'black');
-    firstInnerPath.setAttribute('fill', 'none');
-    if (drawnProportion) {
-      firstInnerPath.setAttribute('stroke-width', morph.borderWidth.valueOf() + 1);
-      firstInnerPath.setAttribute('stroke-dasharray', firstInnerPath.getTotalLength());
-      firstInnerPath.setAttribute('stroke-dashoffset', firstInnerPath.getTotalLength() * (1 - morph.drawnProportion));
-    }
+    [firstPath, secondPath].map(path => {
+      path.setAttribute('d', getSvgVertices(morph.vertices));
+      path.setAttribute('stroke-width', morph.borderWidth.valueOf() + 1);
+      path.setAttribute('stroke-dasharray', path.getTotalLength());
+      secondPath.setAttribute('fill', 'none');
+    });
 
-    secondInnerPath.setAttribute('stroke', 'white');
-    secondInnerPath.setAttribute('fill', 'none');
-    if (drawnProportion) {
-      firstInnerPath.setAttribute('stroke-width', morph.borderWidth.valueOf() + 1);
-      firstInnerPath.setAttribute('stroke-dasharray', firstInnerPath.getTotalLength());
-      firstInnerPath.setAttribute('stroke-dashoffset', firstInnerPath.getTotalLength() * (-1 + (1 - morph.drawnProportion)));
-    }
+    firstPath.setAttribute('stroke', 'black');
+    secondPath.setAttribute('stroke', 'white');
 
+    firstPath.setAttribute('stroke-dashoffset', firstPath.getTotalLength() * (1 - morph.drawnProportion));
+    secondPath.setAttribute('stroke-dashoffset', secondPath.getTotalLength() * (-1 + (1 - morph.drawnProportion)));
+
+    maskNode.append(innerRect, firstPath, secondPath);
     defNode.appendChild(maskNode);
   }
 
