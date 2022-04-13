@@ -726,6 +726,7 @@ ${((height / 2) - (bh / height) * (height / 2)) + (y * height) - (height / 2)})`
       node.setAttribute('offset', (stop.offset * 100) + '%');
       node.setAttribute('stop-opacity', stop.color.a);
       node.setAttribute('stop-color', stop.color.withA(1).toString());
+      return node;
     });
 
     node.append(...stopNodes);
