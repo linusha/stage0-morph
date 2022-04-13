@@ -194,7 +194,7 @@ export default class Stage0Renderer {
         // two SVG nodes are necessary
         // remove everything else, in the case that we have unwrapped submorph nodes
         node.childNodes.forEach(n => {
-          if (n.tagName !== 'SVG') n.remove();
+          if (n.tagName !== 'svg') n.remove();
         });
       } else {
         node.replaceChildren();
@@ -210,7 +210,7 @@ export default class Stage0Renderer {
     let skipWrapping = morph.layout && morph.layout.renderViaCSS;
     if (morph.isPath) {
       if (skipWrapping) {
-        const [firstSvg, secondSvg] = Array.from(node.children).filter(n => n.tagName === 'SVG');
+        const [firstSvg, secondSvg] = Array.from(node.children).filter(n => n.tagName === 'svg');
         keyed('id',
           node,
           alreadyRenderedSubmorphs,
