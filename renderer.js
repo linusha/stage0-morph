@@ -1,10 +1,9 @@
 
-import h from 'esm://cache/stage0@0.0.25';
 import { keyed, noOpUpdate } from 'esm://cache/stage0@0.0.25/keyed';
 
 import { applyAttributesToNode, applyStylingToNode } from './helpers.js';
 import { withoutAll } from 'lively.lang/array.js';
-import { string, arr, num, obj } from 'lively.lang';
+import { arr, num, obj } from 'lively.lang';
 import { getSvgVertices } from 'lively.morphic/rendering/property-dom-mapping.js';
 
 const svgNs = 'http://www.w3.org/2000/svg';
@@ -23,9 +22,10 @@ export default class Stage0Renderer {
     this.morphsWithStructuralChanges = [];
     this.renderedMorphsWithChanges = [];
     this.renderedMorphsWithAnimations = [];
-    this.rootNode = h`<div id='stage0root'></div>`;
-    this.renderMap.set(this.owner, this.rootNode);
     this.doc = owningMorph.env.domEnv.document;
+    this.rootNode = this.doc.createElement('div');
+    this.rootNode.setAttribute('id', 'stage0root');
+    this.renderMap.set(this.owner, this.rootNode);
   }
 
   // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
@@ -296,7 +296,7 @@ export default class Stage0Renderer {
   submorphWrapperNodeFor (morph) {
     let { borderWidthLeft, borderWidthTop, origin: { x: oX, y: oY } } = morph;
 
-    const node = h`<div></div>`;
+    const node = this.doc.createElement('div');
     node.setAttribute('id', 'submorphs-' + morph.id);
     node.style.setProperty('position', 'absolute');
     node.style.setProperty('left', `${oX - (morph.isPath ? 0 : borderWidthLeft)}px`);
@@ -329,72 +329,51 @@ export default class Stage0Renderer {
   // NODE TYPES
   // -=-=-=-=-=-
   nodeForMorph (morph) {
-    return h`
-      <div>
-      </div>
-    `;
+    return this.doc.createElement('div');
   }
 
-  nodeForCheckBox (morph) {
-    return h`
-       <div>
-         <input type="checkbox">
-         </input>
-       </div>
-      `;
-  }
+  // nodeForCheckBox (morph) {
+  //   return h`
+  //      <div>
+  //        <input type="checkbox">
+  //        </input>
+  //      </div>
+  //     `;
+  // }
 
   nodeForCanvas (morph) {
-    const node = h`
-       <div>
-         <canvas #innernode>
-         </canvas>
-       </div>
-      `;
-    const { innernode } = node.collect(node);
-    // TODO: this is not enough, we need to do to not only when newly generating the node but also when updating the styleprops (e.g. width)
-    innernode.style.width = `${this.width}px`;
-    innernode.style.height = `${this.height}px`;
-    innernode.style.pointerEvents = 'none';
-    innernode.style.position = 'absolute';
+    const node = this.doc.createElement('div');
+    const canvasNode = this.doc.createElement('canvas');
+
+    canvasNode.style.width = `${this.width}px`;
+    canvasNode.style.height = `${this.height}px`;
+    canvasNode.style.pointerEvents = 'none';
+    canvasNode.style.position = 'absolute';
+
+    node.appendChild(canvasNode);
+
     return node;
   }
 
   nodeForHTMLMorph (morph) {
-    const node = h`
-      <div>
-      </div>
-    `;
+    const node = this.doc.createElement('div');
     node.appendChild(morph.domNode);
 
     return node;
   }
 
   nodeForImage (morph) {
-    let url = morph.imageUrl;
-    if (url.startsWith('data:')) {
-      const dataPos = url.indexOf(',');
-      const header = url.substring(5, dataPos);
-      const [mimeType, encoding] = header.split(';');
-      const data = url.substring(dataPos + 1);
-      if (encoding !== 'base64') {
-        url = string.createDataURI(data, mimeType);
-      }
-    }
+    const node = this.doc.createElement('div');
+    const imageNode = this.doc.createElement('img');
 
-    const node = h`
-       <div>
-         <img #innernode>
-         </img>
-       </div>
-      `;
-    const { innernode } = node.collect(node);
-    innernode.draggable = false;
-    innernode.style['pointer-events'] = 'none';
-    innernode.style.position = 'absolute';
-    innernode.style.left = 0;
-    innernode.style.width = '100%';
-    innernode.style.height = '100%';
+    imageNode.draggable = false;
+    imageNode.style['pointer-events'] = 'none';
+    imageNode.style.position = 'absolute';
+    imageNode.style.left = 0;
+    imageNode.style.width = '100%';
+    imageNode.style.height = '100%';
+
+    node.appendChild(imageNode);
     return node;
   }
 
@@ -402,7 +381,7 @@ export default class Stage0Renderer {
   // SVGs and Polygons
   // -=-=-=-=-=-=-=-=-=-      
   nodeForPath (morph) {
-    const node = h`<div></div>`;
+    const node = this.doc.createElement('div');
     applyAttributesToNode(morph, node);
 
     const innerSvg = this.createSvgForPolygon();
@@ -786,9 +765,9 @@ ${((height / 2) - (bh / height) * (height / 2)) + (y * height) - (height / 2)})`
   // -=-=-=-
   hooksForCanvas () {
     return [function (morph, node) {
-      const { innernode } = node.collect(node);
-      const hasNewCanvas = morph._canvas !== innernode && innernode.tagName === 'CANVAS';
-      morph.afterRender(innernode, hasNewCanvas);
+      const canvasNode = node.firstChild;
+      const hasNewCanvas = morph._canvas !== canvasNode && canvasNode.tagName === 'CANVAS';
+      morph.afterRender(canvasNode, hasNewCanvas);
     }
     ];
   }
