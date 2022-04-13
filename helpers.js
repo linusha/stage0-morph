@@ -23,7 +23,6 @@ export function applyStylingToNode (morph, node) {
 function defaultAttributes (morph) {
   const attrs = {
     id: morph.id,
-    key: morph.id,
     class: (morph.hideScrollbars
       ? morph.styleClasses.concat('hiddenScrollbar')
       : morph.styleClasses).join(' '),

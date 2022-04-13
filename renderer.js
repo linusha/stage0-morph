@@ -78,7 +78,6 @@ export default class Stage0Renderer {
    * @param {Morph} morph - The morph for which a DOM node should be generated.
    */
   renderMorph (morph) {
-    debugger;
     let node;
     node = this.renderMap.get(morph);
     if (!node) {
@@ -116,7 +115,7 @@ export default class Stage0Renderer {
     const wrapperNode = this.submorphWrapperNodeFor(morph);
     const children = Array.from(node.children);
 
-    const wrapped = children.some(c => c.getAttribute('key') && c.getAttribute('key').includes('submorphs'));
+    const wrapped = children.some(c => c.getAttribute('id') && c.getAttribute('id').includes('submorphs'));
     if (!wrapped) {
       if (!morph.isPath) node.appendChild(wrapperNode);
       else node.insertBefore(wrapperNode, node.lastChild);
@@ -139,13 +138,13 @@ export default class Stage0Renderer {
     // do nothing if submorph nodes are not wrapped
     // e.g. in case we have had a css layout already, this can be skipped
     let children = Array.from(node.children);
-    const wrapped = children.some(c => c.getAttribute('key') && c.getAttribute('key').includes('submorphs'));
+    const wrapped = children.some(c => c.getAttribute('id') && c.getAttribute('id').includes('submorphs'));
     if (wrapped) {
       if (!morph.isPath) {
         node.append(...node.lastChild.childNodes);
         children = Array.from(node.children);
         children.forEach((n) => {
-          if (n.getAttribute('key') && n.getAttribute('key').includes('submorphs')) n.remove();
+          if (n.getAttribute('id') && n.getAttribute('id').includes('submorphs')) n.remove();
         });
       } else {
         const wrapperNode = node.firstChild.nextSibling;
@@ -299,7 +298,7 @@ export default class Stage0Renderer {
     let { borderWidthLeft, borderWidthTop, origin: { x: oX, y: oY } } = morph;
 
     const node = h`<div></div>`;
-    node.setAttribute('key', 'submorphs-' + morph.id);
+    node.setAttribute('id', 'submorphs-' + morph.id);
     node.style.setProperty('position', 'absolute');
     node.style.setProperty('left', `${oX - (morph.isPath ? 0 : borderWidthLeft)}px`);
     node.style.setProperty('top', `${oY - (morph.isPath ? 0 : borderWidthTop)}px`);
@@ -470,7 +469,7 @@ export default class Stage0Renderer {
     const d = getSvgVertices(morph.vertices);
     if (morph.vertices.length) {
       node.firstChild.firstChild.setAttribute('d', d);
-      const defNode = Array.from(node.firstChild.children).find(n => n.tagName === 'defs');
+      // const defNode = Array.from(node.firstChild.children).find(n => n.tagName === 'defs');
       // const clipPath = Array.from(defNode.children).find(n => n.tagName === 'clipPath');
       // const mask = Array.from(defNode.children).find(n => n.tagName === 'mask');
       // clipPath.firstChild.setAttribute('d', d);
