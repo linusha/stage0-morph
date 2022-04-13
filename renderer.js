@@ -6,7 +6,6 @@ import { applyAttributesToNode, applyStylingToNode } from './helpers.js';
 import { withoutAll } from 'lively.lang/array.js';
 import { string, arr, num, obj } from 'lively.lang';
 import { getSvgVertices } from 'lively.morphic/rendering/property-dom-mapping.js';
-import { defaultStyle, svgAttributes } from 'lively.morphic/rendering/morphic-default.js';
 
 const svgNs = 'http://www.w3.org/2000/svg';
 
@@ -79,12 +78,12 @@ export default class Stage0Renderer {
    * @param {Morph} morph - The morph for which a DOM node should be generated.
    */
   renderMorph (morph) {
+    debugger;
     let node;
     node = this.renderMap.get(morph);
-    // Polygon is a subclass of Path
     if (!node) {
       node = morph.getNodeForRenderer(this); // returns a DOM node as specified by the morph
-      if (!morph.isPath) this.renderMap.set(morph, node);
+      this.renderMap.set(morph, node);
     }
 
     // TODO: needs to be fixed once the correct abstraction for polygons is found
@@ -97,9 +96,8 @@ export default class Stage0Renderer {
 
     const skipWrapping = morph.layout && morph.layout.renderViaCSS;
 
-    let wrapperNode;
     if (!skipWrapping) {
-      wrapperNode = this.installWrapperNodeFor(morph, node);
+      this.installWrapperNodeFor(morph, node);
     }
 
     for (let submorph of morph.submorphs) {
@@ -137,7 +135,6 @@ export default class Stage0Renderer {
    * Also removes the wrapper Node.
    * @param {Node} node - Node of the morph for which submorphs should get unwrapped.
    */
-  // TODO: this is not working for polygons
   unwrapSubmorphNodesIfNecessary (node, morph) {
     // do nothing if submorph nodes are not wrapped
     // e.g. in case we have had a css layout already, this can be skipped
@@ -279,10 +276,11 @@ export default class Stage0Renderer {
    * Assumes that a DOM node for the given morph already exists and changes the attributes of this node according to the current style definition of the morph.
    * @param { Morph } morph - The morph for which to update the rendering.
    */
-  // TODO: this needs more advanced logic for polygons, maybe it makes sense to dispatch this back to the morph later on
   renderStylingChanges (morph) {
     const node = this.getNodeForMorph(morph);
 
+    // TODO
+    //  this.renderPolygonMask(morph);
     if (morph.patchSpecialProps) {
       morph.patchSpecialProps(node, this);
     }
@@ -306,11 +304,12 @@ export default class Stage0Renderer {
     node.style.setProperty('left', `${oX - (morph.isPath ? 0 : borderWidthLeft)}px`);
     node.style.setProperty('top', `${oY - (morph.isPath ? 0 : borderWidthTop)}px`);
     if (morph.isPolygon) {
+      // TODO: extract (partially) into a method that reacts to changed clipmode and then handles the clippath
       node.style.setProperty('height', '100%');
       node.style.setProperty('width', '100%');
       node.style.setProperty('overflow', `${morph.clipMode}`);
       if (morph.clipMode !== 'visible') {
-        if (navigator.userAgent.includes('AppleWebKit')) { node.setAttribute('-webkit-clip-path', `url(#clipPath${morph.id})`); } else { node.setAttribute('clip-path', `url(#clipPath${morph.id})`); }
+        node.setAttribute('clip-path', `url(#clipPath${morph.id})`);
       }
     }
 
@@ -410,46 +409,119 @@ export default class Stage0Renderer {
   // SVGs and Polygons
   // -=-=-=-=-=-=-=-=-=-      
   nodeForPath (morph) {
-    const { id, startMarker, endMarker, showControlPoints, drawnProportion, borderWidth } = morph;
+    const node = h`<div></div>`;
+    applyAttributesToNode(morph, node);
 
+    const innerSvg = this.createSvgForPolygon();
+    const pathElem = this.doc.createElementNS(svgNs, 'path');
+    pathElem.setAttribute('id', 'svg' + morph.id);
+    const defNode = this.doc.createElementNS(svgNs, 'defs');
+    innerSvg.appendChild(pathElem);
+    innerSvg.appendChild(defNode);
+
+    const outerSvg = this.createSvgForPolygon();
+
+    node.appendChild(innerSvg);
+    node.appendChild(outerSvg);
+    return node;
+  }
+
+  createSvgForPolygon () {
+    const elem = this.doc.createElementNS(svgNs, 'svg');
+    elem.style.position = 'absolute';
+    elem.style.overflow = 'visible';
+    return elem;
+  }
+
+  // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+  // DYNAMICALLY RENDER POLYGON PROPS
+  // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+  renderPolygonSubmorphClipping (morph) {
+    // add to defs node in div > svg >> defs
+    const clipPath = this.doc.createElementNS(svgNs, 'clipPath');
+    clipPath.setAttribute('id', 'clipPath' + morph.id);
+    const clipPathInner = this.doc.createElementNS(svgNs, 'path');
+    clipPath.appendChild(clipPathInner);
+  }
+
+  renderControlPoints (morph) {
+    let controlPoints = [];
+    if (morph.showControlPoints) {
+      controlPoints = this.doc.createElementNS(svgNs, 'g');
+      controlPoints.append(...this._renderPath_ControlPoints(morph));
+    }
+    const node = this.getNodeForMorph(morph);
+    // TODO: this could be optimized in a smart way
+    node.lastChild.replaceChildren();
+    if (!arr.equals(controlPoints, [])) {
+      node.lastChild.appendChild(controlPoints);
+    }
+  }
+
+  renderPolygonBorderColor (morph) {
+    const node = this.getNodeForMorph(morph);
+    node.firstChild.firstChild.setAttribute('stroke', morph.borderColor.valueOf().toString());
+  }
+
+  renderPolygonDrawAttribute (morph) {
+    // TODO: fix clippath for submorph clipping!
+    const node = this.getNodeForMorph(morph);
     const d = getSvgVertices(morph.vertices);
-
-    const el = this.doc.createElementNS(svgNs, 'path');
-    el.setAttribute('id', 'svg' + morph.id);
-
-    // -=-=-=-=-=-=-=-=-
-    // PATH ATTRIBUTES
-    // -=-=-=-=-=-=-=-=-
-    // TODO: SVG Animation is missing, needs to be moved from hooks
-    if (drawnProportion !== 0) el.setAttribute('mask', 'url(#mask' + morph.id + ')');
-    else el.setAttribute('mask', '');
-
-    const { vertices, fill, borderColor } = morph;
-
-    // addPathAttributes
-    if (vertices.length) {
-      el.setAttribute('d', getSvgVertices(vertices));
+    if (morph.vertices.length) {
+      node.firstChild.firstChild.setAttribute('d', d);
+      const defNode = Array.from(node.firstChild.children).find(n => n.tagName === 'defs');
+      // const clipPath = Array.from(defNode.children).find(n => n.tagName === 'clipPath');
+      // const mask = Array.from(defNode.children).find(n => n.tagName === 'mask');
+      // clipPath.firstChild.setAttribute('d', d);
+      // Array.from(mask.children).forEach(n => {
+      //  if (n.tagName === 'path') n.setAttribute('d', d);
+      // });
     }
+  }
 
-    const bs = morph.borderStyle.valueOf();
-    if (bs === 'dashed') {
-      const bw = morph.borderWidth.valueOf();
-      el.setAttribute('stroke-dasharray', bw * 1.61 + ' ' + bw);
-    } else if (bs === 'dotted') {
-      const bw = morph.borderWidth.valueOf();
-      el.setAttribute('stroke-dasharray', '1 ' + bw * 2);
-      el.setAttribute('stroke-linecap', 'round');
-      el.setAttribute('stroke-linejoin', 'round');
+  renderPolygonFill (morph) {
+    const node = this.getNodeForMorph(morph);
+    let newGradient;
+    let defsNode = Array.from(node.firstChild.children).find(n => n.tagName === 'defs');
+    const def = Array.from(defsNode.children).find(n => n.getAttribute('id').includes('fill'));
+    node.firstChild.firstChild.setAttribute('fill', morph.fill ? morph.fill.isGradient ? 'url(#gradient-fill' + morph.id + ')' : morph.fill.toString() : 'transparent');
+    if (morph.fill && !morph.fill.isGradient) {
+      if (def) def.remove();
+      return;
     }
-    el.setAttribute('stroke-width', borderWidth.valueOf());
-    el.setAttribute('fill', fill ? fill.isGradient ? 'url(#gradient-fill' + id + ')' : fill.toString() : 'transparent');
-    el.setAttribute('stroke', borderColor.valueOf().isGradient
-      ? 'url(#gradient-borderColor' + id + ')'
-      : borderColor.valueOf().toString());
+    newGradient = this.renderGradient('fill' + morph.id, morph.extent, morph.fill);
 
-    // -=-=-=-=-=-=-=-=-
-    // PATH ATTRIBUTES END
-    // -=-=-=-=-=-=-=-=-
+    if (!defsNode && newGradient) {
+      defsNode = this.doc.createElementNS(svgNs, 'defs');
+      defsNode.appendChild(newGradient);
+      node.firstChild.appendChild(defsNode);
+    } else {
+      if (def) defsNode.replaceChild(newGradient, def);
+      else defsNode.appendChild(newGradient);
+    }
+  }
+
+  renderPolygonStrokeStyle (morph) {
+    const node = this.getNodeForMorph(morph);
+    const firstSvg = node.firstChild;
+    firstSvg.style['stroke-linejoin'] = morph.cornerStyle || 'mint';
+    firstSvg.style['stroke-linecap'] = morph.endStyle || 'round';
+  }
+
+  renderPolygonMask (morph) {
+    const node = this.getNodeForMorph(morph);
+    const drawnProportion = morph.drawnProportion;
+    const pathElem = node.firstChild.firstChild;
+    const defNode = node.firstChild.lastChild;
+    // TODO: this can be optimized
+    Array.from(defNode.children).forEach(n => {
+      if (n.tagName === 'mask') n.remove();
+    });
+
+    if (drawnProportion !== 0) pathElem.setAttribute('mask', 'url(#mask' + morph.id + ')');
+    else pathElem.setAttribute('mask', '');
+
     const maskNode = this.doc.createElementNS(svgNs, 'mask');
     const innerRect = this.doc.createElementNS(svgNs, 'rect');
     const firstInnerPath = this.doc.createElementNS(svgNs, 'path');
@@ -457,7 +529,7 @@ export default class Stage0Renderer {
 
     maskNode.append(innerRect, firstInnerPath, secondInnerPath);
 
-    maskNode.setAttribute('id', 'svg' + morph.id);
+    maskNode.setAttribute('id', 'mask' + morph.id);
 
     innerRect.setAttribute('fill', 'white');
     innerRect.setAttribute('x', 0);
@@ -465,7 +537,6 @@ export default class Stage0Renderer {
     innerRect.setAttribute('width', morph.width + 20);
     innerRect.setAttribute('height', morph.height + 20);
 
-    firstInnerPath.setAttribute('d', d);
     firstInnerPath.setAttribute('stroke', 'black');
     firstInnerPath.setAttribute('fill', 'none');
     if (drawnProportion) {
@@ -474,111 +545,41 @@ export default class Stage0Renderer {
       firstInnerPath.setAttribute('stroke-dashoffset', firstInnerPath.getTotalLength() * (1 - morph.drawnProportion));
     }
 
-    secondInnerPath.setAttribute('d', d);
     secondInnerPath.setAttribute('stroke', 'white');
     secondInnerPath.setAttribute('fill', 'none');
     if (drawnProportion) {
       firstInnerPath.setAttribute('stroke-width', morph.borderWidth.valueOf() + 1);
       firstInnerPath.setAttribute('stroke-dasharray', firstInnerPath.getTotalLength());
-      // (-1 + (1 - morph.drawnProportion))
-      firstInnerPath.setAttribute('stroke-dashoffset', firstInnerPath.getTotalLength() * (-morph.drawnProportion));
+      firstInnerPath.setAttribute('stroke-dashoffset', firstInnerPath.getTotalLength() * (-1 + (1 - morph.drawnProportion)));
     }
 
-    const clipPath = this.doc.createElementNS(svgNs, 'clipPath');
-    clipPath.setAttribute('id', 'clipPath' + morph.id);
-    const clipPathInner = this.doc.createElementNS(svgNs, 'path');
-    clipPath.setAttribute('d', d);
-    clipPath.setAttribute('fill', 'white');
-
-    clipPath.appendChild(clipPathInner);
-
-    let markers = [clipPath, maskNode];
-
-    if (startMarker) {
-      if (!startMarker.id) startMarker.id = 'start-marker';
-      el.setAttribute('marker-start', `url(#${morph.id}-${startMarker.id})`);
-      markers = [];
-      markers.push(this._renderPath_Marker(morph, startMarker));
-    }
-    if (endMarker) {
-      if (!endMarker.id) endMarker.id = 'end-marker';
-      el.setAttribute('marker-end', `url(#${morph.id}-${endMarker.id})`);
-      if (!markers) markers = [];
-      markers.push(this._renderPath_Marker(morph, endMarker));
-    }
-
-    let controlPoints;
-    if (showControlPoints) {
-      controlPoints = this.doc.createElementNS(svgNs, 'g');
-      controlPoints.append(...this._renderPath_ControlPoints(morph));
-    }
-
-    return this.nodeForSVGMorph(morph, el, markers, controlPoints);
+    defNode.appendChild(maskNode);
   }
 
-  nodeForSVGMorph (morph, svgEl, markers, controlPoints = []) {
-    const { attributes: svgAttrs } = svgAttributes(morph);
-    const { width, height } = morph.innerBounds();
-    let defs, defNode;
-    const svgElements = [];
-
-    if (morph.fill && morph.fill.isGradient) {
-      if (!defs) defs = [];
-      defs.push(this.renderGradient('fill' + morph.id, morph.extent, morph.fill));
+  renderPolygonBorder (morph) {
+    const node = this.getNodeForMorph(morph);
+    const pathNode = node.firstChild.firstChild;
+    const bs = morph.borderStyle.valueOf();
+    if (bs === 'dashed') {
+      const bw = morph.borderWidth.valueOf();
+      pathNode.setAttribute('stroke-dasharray', bw * 1.61 + ' ' + bw);
+    } else if (bs === 'dotted') {
+      const bw = morph.borderWidth.valueOf();
+      pathNode.setAttribute('stroke-dasharray', '1 ' + bw * 2);
+      pathNode.setAttribute('stroke-linecap', 'round');
+      pathNode.setAttribute('stroke-linejoin', 'round');
     }
-    if (morph.borderColor && morph.borderColor.valueOf().isGradient) {
-      if (!defs) defs = [];
-      defs.push(this.renderGradient('borderColor' + morph.id, morph.extent, morph.borderColor));
-    }
-    if (markers && markers.length) {
-      if (!defs) defs = [];
-      defs.push(...markers);
-    }
+    pathNode.setAttribute('stroke-width', morph.borderWidth.valueOf());
+  }
 
-    svgElements.push(svgEl);
-    if (defs) {
-      defNode = this.doc.createElementNS(svgNs, 'defs');
-      defNode.append(...defs);
-    }
-
-    const basicStyle = obj.select(defaultStyle(morph), ['position', 'filter', 'display', 'opacity',
-      'transform', 'top', 'left', 'transformOrigin', 'cursor', 'overflow']);
-
-    const node = h`<div></div>`;
-    for (let prop in basicStyle) {
-      let name = prop.replace(/([A-Z])/g, '-$1'); // this is more of a hack and is probably already implemented somewhere else as well
-      name = name.toLowerCase();
-      node.style.setProperty(name, basicStyle[prop]);
-    }
-    node.style.setProperty('width', width + 'px');
-    node.style.setProperty('height', height + 'px');
-    node.style.setProperty('pointer-events', morph.reactsToPointer ? 'auto' : 'none');
-
-    applyAttributesToNode(morph, node);
-
-    const innerSvg = this.doc.createElementNS(svgNs, 'svg');
-    innerSvg.style.position = 'absolute';
-    innerSvg.style['stroke-linejoin'] = morph.cornerStyle || 'mint';
-    innerSvg.style['stroke-linecap'] = morph.endStyle || 'round';
-    innerSvg.style.overflow = 'visible';
-    for (let prop in svgAttrs) {
-      innerSvg.setAttribute(prop, svgAttrs[prop]);
-    }
-    innerSvg.append(...svgElements);
-    innerSvg.appendChild(defNode);
-    node.appendChild(innerSvg);
-
-    const outerSvg = this.doc.createElementNS(svgNs, 'svg');
-    outerSvg.style.position = 'absolute';
-    outerSvg.style.overflow = 'visible';
-    for (let prop in svgAttrs) {
-      outerSvg.setAttribute(prop, svgAttrs[prop]);
-    }
-
-    if (!arr.equals(controlPoints, [])) outerSvg.appendChild(controlPoints);
-
-    node.appendChild(outerSvg);
-    return node;
+  renderPolygonSVGAttributes (morph) {
+    const { width, height } = morph;
+    const node = this.getNodeForMorph(morph);
+    [node.firstChild, node.lastChild].forEach(n => {
+      n.setAttribute('width', width || 1);
+      n.setAttribute('height', height || 1);
+      n.setAttribute('viewBox', [0, 0, width || 1, height || 1].join(' '));
+    });
   }
 
   _renderPath_ControlPoints (morph) {
@@ -598,15 +599,15 @@ export default class Stage0Renderer {
       if (isCtrl) r = Math.max(3, Math.ceil(r / 2));
       const node = this.doc.createElementNS(svgNs, 'circle');
       if (isCtrl) {
-        node.setAttribute('fill', 'white');
-        node.setAttribute('stroke-width', 2);
-        node.setAttribute('stroke', color);
+        node.style.setProperty('fill', 'white');
+        node.style.setProperty('stroke-width', 2);
+        node.style.setProperty('stroke', color);
         node.setAttribute('class', cssClass);
         node.setAttribute('cx', cx);
         node.setAttribute('cy', cy);
         node.setAttribute('r', r);
       } else {
-        node.setAttribute('fill', color);
+        node.style.setProperty('fill', color);
         node.setAttribute('class', cssClass);
         node.setAttribute('cx', cx);
         node.setAttribute('cy', cy);
@@ -668,29 +669,44 @@ export default class Stage0Renderer {
     return rendered;
   }
 
-  _renderPath_Marker (morph, markerSpec) {
-    return specTo_h_svg(markerSpec); // eslint-disable-line no-use-before-define
+  renderPathMarker (morph, mode) {
+    const node = this.getNodeForMorph(morph);
+    const pathElem = node.firstChild.firstChild;
+    const defElem = node.firstChild.lastChild;
 
-    // TODO: What the hell is this?
-    function specTo_h_svg (spec) {
-      let { tagName, id, children, style } = spec;
+    const specTo_h_svg = (spec) => {
+      let { tagName, id, children } = spec;
       const childNodes = children ? children.map(specTo_h_svg) : undefined;
+
       if (id) id = morph.id + '-' + id;
+
       const node = this.doc.createElementNS(svgNs, tagName);
       node.setAttribute('id', id);
-      for (let prop in style) {
-        let name = prop.replace(/([A-Z])/g, '-$1');
-        name = name.toLowerCase();
-        node.style.setProperty(name, style[prop]);
+      for (let prop in obj.dissoc(spec, ['id', 'tagName', 'children'])) {
+        node.setAttribute(prop, spec[prop]);
       }
 
-      for (let attr in obj.dissoc(spec, ['tagName', 'id', 'children', 'style'])) {
-        node.setAttribute(attr, attr[attr]);
-      }
-
-      node.append(...childNodes);
+      if (childNodes) node.append(...childNodes);
 
       return node;
+    };
+    const marker = mode === 'start' ? morph.startMarker : morph.endMarker;
+
+    // TODO: this can be further optimized
+    pathElem.removeAttribute(`marker-${mode}`);
+    const defs = Array.from(defElem.children);
+    defs.forEach(d => {
+      if (d.id && d.id.includes(`${mode}-marker`)) d.remove();
+    });
+
+    if (marker) {
+      if (!marker.id) marker.id = `${mode}-marker`;
+      pathElem.setAttribute(`marker-${mode}`, `url(#${morph.id}-${marker.id})`);
+      const defs = Array.from(defElem.children);
+      defs.forEach(d => {
+        if (d.id && d.id.includes(`${mode}-marker`)) d.remove();
+      });
+      defElem.appendChild(specTo_h_svg(marker));
     }
   }
 
