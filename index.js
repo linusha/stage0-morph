@@ -12,4 +12,8 @@ export default class Stage0Morph extends Morph {
   render (renderer) {
     return new Stage0VNode(this, renderer);
   }
+
+  get isStage0Morph () {
+    return true;
+  }
 }
