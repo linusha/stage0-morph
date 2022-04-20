@@ -9,8 +9,8 @@ import { getSvgVertices } from 'lively.morphic/rendering/property-dom-mapping.js
 const svgNs = 'http://www.w3.org/2000/svg';
 
 /**
- * Currently handles rendering of a single Stage0Morph that acts as a "world", similar to the purporse a world would server in normal lively.
- This allows us to hack into the default render loop of lively.
+ * Currently handles rendering of a single Stage0Morph that acts as a "world", similar to the purporse a world would serve in normal lively.
+ * This allows us to hack into the default render loop of lively.
  */
 export default class Stage0Renderer {
   // -=-=-=-
@@ -702,21 +702,26 @@ export default class Stage0Renderer {
     };
     const marker = mode === 'start' ? morph.startMarker : morph.endMarker;
 
-    // TODO: this can be further optimized
-    pathElem.removeAttribute(`marker-${mode}`);
-    const defs = Array.from(defElem.children);
-    defs.forEach(d => {
-      if (d.id && d.id.includes(`${mode}-marker`)) d.remove();
-    });
-
     if (marker) {
       if (!marker.id) marker.id = `${mode}-marker`;
-      pathElem.setAttribute(`marker-${mode}`, `url(#${morph.id}-${marker.id})`);
+      if (!pathElem.getAttribute(`marker-${mode}`)) pathElem.setAttribute(`marker-${mode}`, `url(#${morph.id}-${marker.id})`);
+      const defs = Array.from(defElem.children);
+      const newMarkerNode = specTo_h_svg(marker);
+      let markerInserted = false;
+      defs.forEach(d => {
+        // This is still one DOM operation too many, since we could also patch the existing spec node.
+        if (d.id && d.id.includes(`${mode}-marker`)) {
+          defElem.replaceChild(newMarkerNode, d);
+          markerInserted = true;
+        }
+      });
+      if (!markerInserted) defElem.appendChild(newMarkerNode);
+    } else {
+      pathElem.removeAttribute(`marker-${mode}`);
       const defs = Array.from(defElem.children);
       defs.forEach(d => {
         if (d.id && d.id.includes(`${mode}-marker`)) d.remove();
       });
-      defElem.appendChild(specTo_h_svg(marker));
     }
   }
 
