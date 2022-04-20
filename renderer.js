@@ -85,11 +85,8 @@ export default class Stage0Renderer {
       this.renderMap.set(morph, node);
     }
 
-    // TODO: needs to be fixed once the correct abstraction for polygons is found
-    if (!morph.isPath) {
-      applyAttributesToNode(morph, node);
-      applyStylingToNode(morph, node);
-    }
+    applyAttributesToNode(morph, node);
+    applyStylingToNode(morph, node);
 
     if (morph.submorphs.length === 0) return node;
 
@@ -410,12 +407,15 @@ export default class Stage0Renderer {
   // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
   renderControlPoints (morph) {
     let controlPoints = [];
+    // TODO: This can and should be optimized, since live manipulation of a Path is super slow at the moment.
+    // It should be investigated whether this is only slowness, or whether we also have some kind of threshhold that stops the dragging of control points from being slow.
+    // An optimization would probably find a nice data structure for the control points, save that somewhere and then use that to patch the difference with the `keyed` method that `stage0` provides us with.    
     if (morph.showControlPoints) {
       controlPoints = this.doc.createElementNS(svgNs, 'g');
       controlPoints.append(...this._renderPath_ControlPoints(morph));
     }
     const node = this.getNodeForMorph(morph);
-    // TODO: this could be optimized in a smart way
+
     node.lastChild.replaceChildren();
     if (!arr.equals(controlPoints, [])) {
       node.lastChild.appendChild(controlPoints);
@@ -436,7 +436,6 @@ export default class Stage0Renderer {
   }
 
   renderPolygonDrawAttribute (morph) {
-    // TODO: fix clippath for submorph clipping!
     const node = this.getNodeForMorph(morph);
     const d = getSvgVertices(morph.vertices);
     if (morph.vertices.length) {
@@ -448,11 +447,6 @@ export default class Stage0Renderer {
         defNode.appendChild(clipPath);
       }
       clipPath.firstChild.setAttribute('d', d);
-      // const mask = Array.from(defNode.children).find(n => n.tagName === 'mask');
-
-      // Array.from(mask.children).forEach(n => {
-      //  if (n.tagName === 'path') n.setAttribute('d', d);
-      // });
     }
   }
 
