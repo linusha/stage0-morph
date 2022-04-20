@@ -101,7 +101,10 @@ export default class Stage0Renderer {
       if (skipWrapping) {
         if (!morph.isPath) node.appendChild(submorphNode);
         else node.insertBefore(submorphNode, node.lastChild);
-      } else node.firstChild.nextSibling.appendChild(submorphNode);
+      } else { // do not skip wrapping
+        if (!morph.isPath) node.firstChild.appendChild(submorphNode);
+        else node.firstChild.nextSibling.appendChild(submorphNode);
+      }
       morph.renderingState.renderedMorphs.push(submorph);
     }
 
