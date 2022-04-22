@@ -239,7 +239,7 @@ export default class Stage0Renderer {
         submorphsToRender,
         item => this.renderMorph(item),
         noOpUpdate,
-        (morph.isCanvas || morph.isHTMLMorph || morph.isImage) ? beforeElem : null// before list
+        this.isComposite(morph) ? beforeElem : null// before list
       );
     } else {
       this.installWrapperNodeFor(morph, node);
@@ -270,6 +270,10 @@ export default class Stage0Renderer {
 
     morph.renderingState.renderedMorphs = morph.submorphs.slice();
     morph.renderingState.hasStructuralChanges = false;
+  }
+
+  isComposite (morph) {
+    return morph.isCanvas || morph.isHTMLMorph || morph.isImage || morph.isCheckbox;
   }
 
   /**
@@ -332,15 +336,6 @@ export default class Stage0Renderer {
     return this.doc.createElement('div');
   }
 
-  // nodeForCheckBox (morph) {
-  //   return h`
-  //      <div>
-  //        <input type="checkbox">
-  //        </input>
-  //      </div>
-  //     `;
-  // }
-
   nodeForCanvas (morph) {
     const node = this.doc.createElement('div');
     const canvasNode = this.doc.createElement('canvas');
@@ -374,6 +369,23 @@ export default class Stage0Renderer {
     imageNode.style.height = '100%';
 
     node.appendChild(imageNode);
+    return node;
+  }
+
+  nodeForCheckbox (morph) {
+    const node = this.doc.createElement('div');
+    const boxNode = this.doc.createElement('input');
+    node.appendChild(boxNode);
+
+    boxNode.setAttribute('type', 'checkbox');
+
+    boxNode.setAttribute('draggable', 'false'),
+
+    boxNode.style['pointer-events'] = 'none';
+    boxNode.style.width = '15px',
+    boxNode.style.height = '15px',
+    boxNode.style.position = 'absolute';
+
     return node;
   }
 
