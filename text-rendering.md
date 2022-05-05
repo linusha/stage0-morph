@@ -79,6 +79,21 @@ In the best case, we would find a way to asynchronously load the `Layout` and `D
 
 It is important that changes to e.g. the size of a `Text` (that result from a changed `textString` property) are reflected into the morph synchronously. E.g., changing the textString of a `Text` and directly afterwards getting its extent, should provide the correct answer in the case of morphs that are fitted.
 
+## Submorphs
+
+Currently, only `Text` supports having submorphs (at least in the text). *Should it become possible to embed Morphs without having a document/layout?*.
+Currently, a Morph inside of `Text` can be in three modes:
+
+1. Just be a submorph, floating above the text and not caring.
+2. Being **embedded** in the text, i.e. being treated as just another character, letting the line become larger.
+3. Being **in displacing mode**, with text floating around it. 
+
+In theory, 2 and 3 can be toggled with `toggleTextWrappingAround` on `Text`. This method is broken, due to changes to the graphics system.
+
+Morphs can simply be added into a `Text` by putting them into the `textAndAttributes`. *Their positions are somehow kept track of with the usage of anchors*.
+When one drops a Morph into a `Text`, `[morph, null]` is inserted at the appropriate position.
+The renderer, when rendering a line, simply checks if the current "token" is a Character or a Morph, if it is a morph it will render the submorph.
+
 ## Different Selection Modes
 
 There should be three different selection modes. Currently, we only have no selection at all or the lively selection that requires a full-blown `Document`.
