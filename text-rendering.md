@@ -106,4 +106,4 @@ The problem with the approach outlined in 2. is that the KeyArea needs to have f
 
 We either find a way for this to work otherwise, or we accept that with the mouse over a morph that uses native selection these kinds of keycombos do not work.
 The latter case seems preferrable right now, as it is much cheaper.
-For `user-select` to work as expected, the Morph needs to have `stealsFocus = true`.     
+For `user-select` to work as expected, the Morph needs to have `stealFocus = true`. Additionaly, we need to make sure that the morph in question receives pointer events.  

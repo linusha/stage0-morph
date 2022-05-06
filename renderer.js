@@ -5,6 +5,9 @@ import { applyAttributesToNode, applyStylingToNode } from './helpers.js';
 import { withoutAll } from 'lively.lang/array.js';
 import { arr, num, obj } from 'lively.lang';
 import { getSvgVertices } from 'lively.morphic/rendering/property-dom-mapping.js';
+import { setCSSDef } from 'lively.morphic/rendering/dom-helper.js';
+import { cssForTexts } from './css-decls.js';
+import { Rectangle } from 'lively.graphics';
 
 const svgNs = 'http://www.w3.org/2000/svg';
 
@@ -26,6 +29,19 @@ export default class Stage0Renderer {
     this.rootNode = this.doc.createElement('div');
     this.rootNode.setAttribute('id', 'stage0root');
     this.renderMap.set(this.owner, this.rootNode);
+    this.installTextCSS();
+    window.stage0renderer = this;
+  }
+
+  installTextCSS () {
+    const style = document.createElement('style');
+    style.type = 'text/css';
+    style.id = 'stylesfortext';
+    // TODO: make more robust
+    if (Array.from(this.doc.head.children).find(c => c.id === 'stylesfortext')) return null;
+    setCSSDef(style, cssForTexts, this.doc);
+    (this.doc.head || this.doc).appendChild(style);
+    return style;
   }
 
   // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
@@ -63,7 +79,7 @@ export default class Stage0Renderer {
     for (let morph of this.renderedMorphsWithAnimations) {
       const node = this.getNodeForMorph(morph);
       morph._animationQueue.startAnimationsFor(node);
-      morph.renderingState.animationsAdded = false;
+      morph.renderingState.animationAdded = false;
     }
 
     return this.rootNode;
@@ -387,6 +403,250 @@ export default class Stage0Renderer {
     boxNode.style.position = 'absolute';
 
     return node;
+  }
+
+  textLayerNodeFor (morph) {
+    const {
+      height,
+      padding: { x: padLeft, y: padTop, width: padWidth, height: padHeight },
+      lineWrapping,
+      fixedWidth,
+      fixedHeight,
+      backgroundColor,
+      fontColor,
+      textAlign,
+      fontSize,
+      textDecoration,
+      fontStyle,
+      fontWeight,
+      fontFamily,
+      lineHeight,
+      wordSpacing,
+      letterSpacing,
+      tabWidth,
+      selectionMode
+    } = morph;
+    const style = { overflow: 'hidden', top: '0px', left: '0px' };
+    const padRight = padLeft + padWidth;
+    const padBottom = padTop + padHeight;
+    let textLayerClasses = 'newtext-text-layer';
+
+    switch (fixedWidth && lineWrapping) {
+      case true:
+      case 'by-words': textLayerClasses = textLayerClasses + ' wrap-by-words'; break;
+      case 'only-by-words': textLayerClasses = textLayerClasses + ' only-wrap-by-words'; break;
+      case 'by-chars': textLayerClasses = textLayerClasses + ' wrap-by-chars'; break;
+      case false: textLayerClasses = textLayerClasses + ' no-wrapping'; break;
+    }
+
+    // TODO: Is it correct to couple fixedWidth and fixedHeight to this? I.e. would one want to use rightAlign and not fix the width of the text morph?
+    if (!fixedWidth) textLayerClasses = textLayerClasses + ' auto-width';
+    if (!fixedHeight) textLayerClasses = textLayerClasses + ' auto-height';
+    if (selectionMode === 'native') textLayerClasses = textLayerClasses + ' selectable';
+    // const textAttrs = { className: textLayerClasses, style };
+    // if (fixedHeight) style.height = textHeight + 'px';
+    if (padLeft > 0) style.paddingLeft = padLeft + 'px';
+    if (padRight > 0) style.paddingRight = padRight + 'px';
+    if (padTop > 0) style.marginTop = padTop + 'px';
+    if (padBottom > 0) style.marginBottom = padBottom + 'px';
+    if (letterSpacing) style.letterSpacing = letterSpacing + 'px';
+    if (wordSpacing) style.wordSpacing = wordSpacing + 'px';
+    if (lineHeight) style.lineHeight = lineHeight;
+    if (fontFamily) style.fontFamily = fontFamily;
+    if (fontWeight) style.fontWeight = fontWeight;
+    if (fontStyle) style.fontStyle = fontStyle;
+    if (textDecoration) style.textDecoration = textDecoration;
+    if (fontSize) style.fontSize = fontSize + 'px';
+    if (textAlign) style.textAlign = textAlign;
+    if (fontColor) style.color = String(fontColor);
+    if (backgroundColor) style.backgroundColor = backgroundColor;
+    if (tabWidth !== 8) style.tabSize = tabWidth;
+
+    // if (additionalStyle) {
+    //   const { clipMode, height, width } = additionalStyle;
+    //   if (typeof width === 'number') { style.width = width + 'px'; }
+    //   if (typeof height === 'number') { style.height = height + 'px'; }
+    //   if (clipMode) { style.overflow = clipMode; }
+    // }
+
+    const node = this.doc.createElement('div');
+    for (let prop in style) {
+      let name = prop.replace(/([A-Z])/g, '-$1'); // this is more of a hack and is probably already implemented somewhere else as well
+      name = name.toLowerCase();
+      node.style.setProperty(name, style[prop]);
+    }
+    node.className = textLayerClasses;
+
+    return node;
+  }
+
+  renderTextAndAttributes (node, morph) {
+    const textNode = Array.from(node.children).find(n => n.className.includes('newtext-text-layer'));
+    textNode.replaceChildren(...this.renderAllLines(morph));
+    morph.renderingState.renderedTextAndAttributes = morph.textAndAttributes;
+  }
+
+  /**
+   * Renders chunks (1 pair of text and textAttributes) into lines (divs),
+   * Thus returns an array of divs that can each contain multiple spans 
+   */
+  nodeForLine (lineObject, morph) {
+    const line = lineObject;
+    const renderedChunks = [];
+
+    let content, attr,
+      fontSize, fontFamily, fontWeight, fontStyle, textDecoration, fontColor,
+      backgroundColor, nativeCursor, textStyleClasses, link;
+    let tagname; let nodeStyle; let nodeAttrs; let paddingRight; let paddingLeft; let paddingTop; let paddingBottom;
+    let lineHeight; let textAlign; let verticalAlign; let wordSpacing; let letterSpacing; let quote;
+    let textStroke;
+    let minFontSize = morph.fontSize;
+
+    for (let i = 0; i < line.length; i = i + 2) {
+      content = line[i] || '\u00a0';
+      attr = line[i + 1];
+
+      // TODO: WHY DO WE CHECK FOR SUBMORPHS HERE AGAIN?
+      // if (typeof content !== 'string') {
+      //   renderedChunks.push(
+      //     content.isMorph
+      //       ? this.renderEmbeddedSubmorph(h, renderer, content, attr)
+      //       : objectReplacementChar);
+      //   continue;
+      // }
+
+      if (!attr) { renderedChunks.push(content); continue; }
+
+      lineHeight = attr.lineHeight || lineHeight;
+      textAlign = attr.textAlign || textAlign;
+      wordSpacing = attr.wordSpacing || wordSpacing;
+      letterSpacing = attr.letterSpacing || letterSpacing;
+      paddingRight = attr.paddingRight;
+      paddingLeft = attr.paddingLeft;
+      paddingTop = attr.paddingTop;
+      paddingBottom = attr.paddingBottom;
+
+      quote = attr.quote || quote;
+
+      tagname = 'span';
+      nodeStyle = {};
+      nodeAttrs = { style: nodeStyle };
+
+      if (fontSize && attr.fontSize < minFontSize) minFontSize = attr.fontSize;
+
+      if (attr.link) {
+        tagname = 'a';
+        nodeAttrs.href = link;
+        if (link && link.startsWith('http')) nodeAttrs.target = '_blank';
+      }
+
+      if (link || nativeCursor) nodeStyle.pointerEvents = 'auto';
+
+      if (attr.fontSize) nodeStyle.fontSize = attr.fontSize && (obj.isString(attr.fontSize) ? attr.fontSize : attr.fontSize + 'px');
+      if (attr.fontFamily) nodeStyle.fontFamily = attr.fontFamily;
+      if (attr.fontWeight) nodeStyle.fontWeight = attr.fontWeight;
+      if (attr.fontStyle) nodeStyle.fontStyle = attr.fontStyle;
+      if (attr.textDecoration) nodeStyle.textDecoration = attr.textDecoration;
+      if (attr.fontColor) nodeStyle.color = String(attr.fontColor);
+      if (attr.backgroundColor) nodeStyle.backgroundColor = String(attr.backgroundColor);
+      if (attr.nativeCursor) nodeStyle.cursor = attr.nativeCursor;
+      if (paddingRight) nodeStyle.paddingRight = paddingRight;
+      if (paddingLeft) nodeStyle.paddingLeft = paddingLeft;
+      if (paddingTop) nodeStyle.paddingTop = paddingTop;
+      if (paddingBottom) nodeStyle.paddingBottom = paddingBottom;
+      if (attr.verticalAlign) nodeStyle.verticalAlign = attr.verticalAlign;
+      if (textStroke) nodeStyle['-webkit-text-stroke'] = attr.textStroke;
+      if (attr.doit) { nodeStyle.pointerEvents = 'auto'; nodeStyle.cursor = 'pointer'; }
+
+      textStyleClasses = attr.textStyleClasses;
+      if (textStyleClasses && textStyleClasses.length) { nodeAttrs.className = textStyleClasses.join(' '); }
+
+      const chunkNode = this.doc.createElement(tagname);
+      chunkNode.textContent = content;
+      for (let prop in nodeStyle) {
+        let name = prop.replace(/([A-Z])/g, '-$1'); // this is more of a hack and is probably already implemented somewhere else as well
+        name = name.toLowerCase();
+        chunkNode.style.setProperty(name, nodeStyle[prop]);
+      }
+      renderedChunks.push(chunkNode);
+    }
+
+    const lineStyle = {};
+
+    // if (morph.fontSize > minFontSize) lineStyle.fontSize = minFontSize + 'px';
+    if (lineHeight) lineStyle.lineHeight = lineHeight;
+    if (textAlign) lineStyle.textAlign = textAlign;
+    if (letterSpacing) lineStyle.letterSpacing = letterSpacing + 'px';
+    if (wordSpacing) lineStyle.wordSpacing = wordSpacing + 'px';
+
+    let node = this.doc.createElement('div');
+    node.className = 'line';
+    node.append(...renderedChunks);
+
+    // if (quote) {
+    //   if (typeof quote !== 'number') quote = 1;
+    //   for (let i = quote; i--;) node = h('blockquote', {}, node);
+    // }
+    node.setAttribute('id', line.id);
+    return node;
+  }
+
+  renderAllLines (morph) {
+    const {
+      height,
+      scroll,
+      padding: { x: padLeft, y: padTop, width: padWidth, height: padHeight },
+      clipMode,
+      textAndAttributes
+    } = morph;
+    // TODO: MAJOR ASSUMPTION -- WE DO NOT HAVE A DOCUMENT SINCE WE ARE NOT UPGRADED
+
+    const renderedLines = [];
+
+    // when we have no doc, text and attributes are split into lines
+    for (let i = 0; i < morph.textAndAttributes.length; i++) {
+      const newLine = this.nodeForLine(morph.textAndAttributes[i], morph);
+      renderedLines.push(newLine);
+    }
+    return renderedLines;
+  }
+
+  measureBoundsFor (morph) {
+    let notInDOM, placeholder;
+    const node = this.getNodeForMorph(morph);
+    if (!node.parentNode) {
+      notInDOM = true;
+      placeholder = this.doc.createElement('div');
+      placeholder.style.height = 'auto';
+      placeholder.style.width = 'auto';
+      placeholder.style.visibility = 'hidden';
+      placeholder.style.position = 'absolute';
+      this.doc.body.appendChild(placeholder);
+    }
+    const textNode = Array.from(node.children).find(n => n.className.includes('newtext-text-layer'));
+    const prevParent = textNode.parentNode;
+    if (notInDOM) placeholder.appendChild(textNode);
+    const domMeasure = textNode.getBoundingClientRect();
+    const bounds = new Rectangle(domMeasure.x, domMeasure.y, domMeasure.width, domMeasure.height);
+    if (notInDOM) {
+      prevParent.appendChild(textNode);
+      placeholder.remove();
+    }
+
+    return bounds;
+  }
+
+  nodeForText (morph) {
+    const node = this.doc.createElement('div');
+    const textLayer = this.textLayerNodeFor(morph);
+
+    node.appendChild(textLayer);
+    textLayer.append(...this.renderAllLines(morph));
+    return node;
+    // current goal: autofitted text morph without submorphs without layouting and static text
+    // maybe introduce the selection property in the next step
+
+    // TODO: submorphs and stuff (see renderMorphFast in text/renderer.js)
   }
 
   // -=-=-=-=-=-=-=-=-=-
