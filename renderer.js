@@ -30,7 +30,22 @@ export default class Stage0Renderer {
     this.rootNode.setAttribute('id', 'stage0root');
     this.renderMap.set(this.owner, this.rootNode);
     this.installTextCSS();
+    this.installPlaceholder();
     window.stage0renderer = this;
+  }
+
+  installPlaceholder () {
+    this.placeholder = this.placeholder || this.doc.getElementById('placeholder');
+
+    if (this.placeholder) return;
+
+    const placeholder = this.doc.createElement('div');
+    placeholder.id = 'placeholder';
+    placeholder.style.height = 'auto';
+    placeholder.style.width = 'auto';
+    placeholder.style.visibility = 'hidden';
+    placeholder.style.position = 'absolute';
+    this.placeholder = this.doc.body.appendChild(placeholder);
   }
 
   installTextCSS () {
@@ -612,26 +627,14 @@ export default class Stage0Renderer {
   }
 
   measureBoundsFor (morph) {
-    let notInDOM, placeholder;
     const node = this.getNodeForMorph(morph);
-    if (!node.parentNode) {
-      notInDOM = true;
-      placeholder = this.doc.createElement('div');
-      placeholder.style.height = 'auto';
-      placeholder.style.width = 'auto';
-      placeholder.style.visibility = 'hidden';
-      placeholder.style.position = 'absolute';
-      this.doc.body.appendChild(placeholder);
-    }
+
     const textNode = Array.from(node.children).find(n => n.className.includes('newtext-text-layer'));
     const prevParent = textNode.parentNode;
-    if (notInDOM) placeholder.appendChild(textNode);
+    this.placeholder.appendChild(textNode);
     const domMeasure = textNode.getBoundingClientRect();
     const bounds = new Rectangle(domMeasure.x, domMeasure.y, domMeasure.width, domMeasure.height);
-    if (notInDOM) {
-      prevParent.appendChild(textNode);
-      placeholder.remove();
-    }
+    prevParent.appendChild(textNode);
 
     return bounds;
   }

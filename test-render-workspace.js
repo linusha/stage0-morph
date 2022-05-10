@@ -6,20 +6,16 @@ import { Morph, ProportionalLayout, Ellipse } from "lively.morphic";
 import { Canvas } from "lively.components/canvas.js";
 import { SmartText } from "lively.morphic/text/smart-text.js";
 
-let fullSmartText = new SmartText(
-{textAndAttributes: ["Hello", {fontSize: 50, backgroundColor: '#FFFF00',},"World\ntest\ntest"], readOnly: true, name: 'test'})
+let fullSmartText = new SmartText({textAndAttributes: ["Hello", {fontSize: 50, backgroundColor: '#FFFF00',},"World\ntest\ntest"], readOnly: true, name: 'test'})
 fullSmartText.extent
 stage0m.addMorph(fullSmartText)
-fullSmartText.textAndAttributes = ['Hello\ntest\ntest', null]
+fullSmartText.textAndAttributes = ['Helloo', null, 'Robin\n', {backgroundColor: '#FFFF00'}, 'new line\n',null,'new line',null]
 fullSmartText.extent
 const stage0m = new Stage0Morph({extent: pt(500,500), fill: Color.white})
 stage0m.openInWorld()
 stage0m.remove()
 let text;
-text = new Text({textAndAttributes: ["Hello", {fontSize: 50, backgroundColor: '#FFFF00',},"World\ntest\ntest"], readOnly: true, name: 'test', selectionMode: 'native', extent:pt(100,20), clipMode: 'auto', fixedWidth: true, fixedHeight: true, textAlign: 'right'})
-text = new Text({textAndAttributes: ["Hello", {fontSize: 50, backgroundColor: '#FFFF00',},"World\ntest\ntest"], readOnly: true, name: 'test', selectionMode: 'native'})
-text = new Text({textAndAttributes: ["Hello", {fontSize: 50, backgroundColor: '#FFFF00',},"World\ntest\ntest"], name: 'test', selectionMode: 'native'})
-text.textAndAttributes
+
 text.renderingState.hasCSSLayoutChange = false;
 text.renderingState.hasStructuralChanges = false;
 text.renderingState.renderedTextAndAttributes = []
