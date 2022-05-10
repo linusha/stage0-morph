@@ -8,6 +8,7 @@ import { getSvgVertices } from 'lively.morphic/rendering/property-dom-mapping.js
 import { setCSSDef } from 'lively.morphic/rendering/dom-helper.js';
 import { cssForTexts } from './css-decls.js';
 import { Rectangle } from 'lively.graphics';
+import { objectReplacementChar } from 'lively.morphic/text/document.js';
 
 const svgNs = 'http://www.w3.org/2000/svg';
 
@@ -501,6 +502,22 @@ export default class Stage0Renderer {
     morph.renderingState.renderedTextAndAttributes = morph.textAndAttributes;
   }
 
+  renderMorphInLine (morph, attr) {
+    attr = attr || {};
+    const rendered = this.renderMorph(morph);
+    rendered.style.position = 'sticky';
+    rendered.style.transform = '';
+    rendered.style.textAlign = 'initial';
+    rendered.style.removeProperty('top');
+    rendered.style.removeProperty('left');
+    // fixme:  this addition screws up the bounds computation of the embedded submorph
+    if (attr.paddingTop) rendered.style.marginTop = attr.paddingTop;
+    if (attr.paddingLeft) rendered.style.marginLeft = attr.paddingLeft;
+    if (attr.paddingRight) rendered.style.marginRight = attr.paddingRight;
+    if (attr.paddingBottom) rendered.style.marginBottom = attr.paddingBottom;
+    return rendered;
+  }
+
   /**
    * Renders chunks (1 pair of text and textAttributes) into lines (divs),
    * Thus returns an array of divs that can each contain multiple spans 
@@ -521,14 +538,13 @@ export default class Stage0Renderer {
       content = line[i] || '\u00a0';
       attr = line[i + 1];
 
-      // TODO: WHY DO WE CHECK FOR SUBMORPHS HERE AGAIN?
-      // if (typeof content !== 'string') {
-      //   renderedChunks.push(
-      //     content.isMorph
-      //       ? this.renderEmbeddedSubmorph(h, renderer, content, attr)
-      //       : objectReplacementChar);
-      //   continue;
-      // }
+      if (typeof content !== 'string') {
+        renderedChunks.push(
+          content.isMorph
+            ? this.renderMorphInLine(content, attr)
+            : objectReplacementChar);
+        continue;
+      }
 
       if (!attr) { renderedChunks.push(content); continue; }
 
