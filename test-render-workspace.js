@@ -6,23 +6,21 @@ import { Morph, ProportionalLayout, Ellipse } from "lively.morphic";
 import { Canvas } from "lively.components/canvas.js";
 import { SmartText } from "lively.morphic/text/smart-text.js";
 
-let fullSmartText = new SmartText({textAndAttributes: ["Hello", {fontSize: 50, backgroundColor: '#FFFF00',},"World\ntest\ntest"], readOnly: true, name: 'test'})
-fullSmartText.extent
+let fullSmartText = new SmartText({textAndAttributes: ["Hello", null], name: 'test'})
+console.log(fullSmartText._node)
+fullSmartText.readOnly = false;
+
+fullSmartText.textAndAttributes
+fullSmartText.forceRerender()
+fullSmartText.remove()
+
 stage0m.addMorph(fullSmartText)
-fullSmartText.textAndAttributes = ['Helloo', null, 'Robin\n', {backgroundColor: '#FFFF00'}, 'new line\n',null,'new line',null]
-fullSmartText.extent
+fullSmartText.textAndAttributes = 'testerino'
+fullSmartText.textAndAttributes = ['Helloo', {fontSize: 30}, 'Robin\n', {backgroundColor: '#FFFF00'}, 'new line\n',null,'new line',null]
+fullSmartText.selection
 const stage0m = new Stage0Morph({extent: pt(500,500), fill: Color.white})
 stage0m.openInWorld()
 stage0m.remove()
-let text;
-
-text.renderingState.hasCSSLayoutChange = false;
-text.renderingState.hasStructuralChanges = false;
-text.renderingState.renderedTextAndAttributes = []
-text.needsRerender = false;
-stage0m.addMorph(text)
-
-text.textAndAttributes = ["Hello", {textAlign: 'right', fontSize: 50, backgroundColor: '#FFFF00'},"World\ntest\ntest\ntest\ntest\ntest",null]
 
 // TODO: for these morphs hook are not toggled i believe!
 const subsubmorph = new Morph({name: 'subsubmorph', fill: Color.pink,extent: pt(20,20)})

@@ -16,4 +16,9 @@ export default class Stage0Morph extends Morph {
   get isStage0Morph () {
     return true;
   }
+
+  remove () {
+    window.stage0renderer = null;
+    super.remove();
+  }
 }

@@ -7,8 +7,9 @@ import { arr, num, obj } from 'lively.lang';
 import { getSvgVertices } from 'lively.morphic/rendering/property-dom-mapping.js';
 import { setCSSDef } from 'lively.morphic/rendering/dom-helper.js';
 import { cssForTexts } from './css-decls.js';
-import { Rectangle } from 'lively.graphics';
+import { Rectangle, pt } from 'lively.graphics';
 import { objectReplacementChar } from 'lively.morphic/text/document.js';
+import { splitTextAndAttributesIntoLines } from 'lively.morphic/text/attributes.js';
 
 const svgNs = 'http://www.w3.org/2000/svg';
 
@@ -108,11 +109,12 @@ export default class Stage0Renderer {
   /**
    * Returns a new DOM node for a morph.
    * @param {Morph} morph - The morph for which a DOM node should be generated.
+   * @param {Boolean} force - If set to true will force a rerender of the morph, ignoring possibly cached nodes.
    */
-  renderMorph (morph) {
+  renderMorph (morph, force) {
     let node;
     node = this.renderMap.get(morph);
-    if (!node) {
+    if (force || !node) {
       node = morph.getNodeForRenderer(this); // returns a DOM node as specified by the morph
       this.renderMap.set(morph, node);
     }
@@ -455,7 +457,7 @@ export default class Stage0Renderer {
       case false: textLayerClasses = textLayerClasses + ' no-wrapping'; break;
     }
 
-    // TODO: Is it correct to couple fixedWidth and fixedHeight to this? I.e. would one want to use rightAlign and not fix the width of the text morph?
+    // TODO: we want to support right and left align also for morpht that have a non-fixed widht and or height
     if (!fixedWidth) textLayerClasses = textLayerClasses + ' auto-width';
     if (!fixedHeight) textLayerClasses = textLayerClasses + ' auto-height';
     if (selectionMode === 'native') textLayerClasses = textLayerClasses + ' selectable';
@@ -499,6 +501,7 @@ export default class Stage0Renderer {
   renderTextAndAttributes (node, morph) {
     const textNode = Array.from(node.children).find(n => n.className.includes('newtext-text-layer'));
     textNode.replaceChildren(...this.renderAllLines(morph));
+    if (morph.document) this.updateLineExtents(morph, node);
     morph.renderingState.renderedTextAndAttributes = morph.textAndAttributes;
   }
 
@@ -613,7 +616,7 @@ export default class Stage0Renderer {
     let node = this.doc.createElement('div');
     node.className = 'line';
     node.append(...renderedChunks);
-
+    node.append(this.doc.createElement('br'));
     // if (quote) {
     //   if (typeof quote !== 'number') quote = 1;
     //   for (let i = quote; i--;) node = h('blockquote', {}, node);
@@ -630,15 +633,21 @@ export default class Stage0Renderer {
       clipMode,
       textAndAttributes
     } = morph;
-    // TODO: MAJOR ASSUMPTION -- WE DO NOT HAVE A DOCUMENT SINCE WE ARE NOT UPGRADED
 
     const renderedLines = [];
-
+    if (!morph.document) {
     // when we have no doc, text and attributes are split into lines
-    for (let i = 0; i < morph.textAndAttributes.length; i++) {
-      const newLine = this.nodeForLine(morph.textAndAttributes[i], morph);
-      renderedLines.push(newLine);
+      for (let i = 0; i < morph.textAndAttributes.length; i++) {
+        const newLine = this.nodeForLine(morph.textAndAttributes[i], morph);
+        renderedLines.push(newLine);
+      }
+    } else {
+      for (const line of splitTextAndAttributesIntoLines(morph.document.textAndAttributes)) {
+        const newLine = this.nodeForLine(line, morph);
+        renderedLines.push(newLine);
+      }
     }
+
     return renderedLines;
   }
 
@@ -655,17 +664,286 @@ export default class Stage0Renderer {
     return bounds;
   }
 
+  updateLineExtents (morph, node) {
+    const prevPar = node.parentNode;
+    const sibling = node.nextSibling;
+    this.placeholder.appendChild(node);
+    let i = 0;
+    const lineNodes = node.querySelectorAll('.line');
+    for (const line of morph.document.lines) {
+      const currLineNode = lineNodes[i];
+      const { width, height } = currLineNode.getBoundingClientRect();
+      line.changeExtent(width, height);
+      i++;
+    }
+    if (prevPar) {
+      if (sibling) prevPar.insertBefore(node, sibling);
+      else prevPar.appendChild(node);
+    }
+  }
+
+  /**
+   * Renders the slices as specified in renderSelectionLayer to SVG, utilizing a rounded corner
+   * selection style that is stolen from MS Studio Code.
+   * @param {Rectangle[]} slice - The slices to render.
+   * @param {Color} selectionColor - The color of the rendered selection.
+   * @param {Text} morph - The TextMorph to be rendered.
+   * @return Collection of rendered slices as svg.
+   */
+  selectionLayerRounded (slices, selectionColor, morph) {
+    // split up the rectangle corners into a left and right batches
+    let currentBatch;
+    const batches = [
+      currentBatch = {
+        left: [], right: []
+      }
+    ];
+
+    let lastSlice;
+    for (const slice of slices) {
+      // if rectangles do not overlap, create a new split batch
+      if (lastSlice && (lastSlice.left() > slice.right() || lastSlice.right() < slice.left())) {
+        batches.push(currentBatch = { left: [], right: [] });
+      }
+      currentBatch.left.push(slice.topLeft(), slice.bottomLeft());
+      currentBatch.right.push(slice.topRight(), slice.bottomRight());
+      lastSlice = slice;
+    }
+    // turn each of the batches into its own svg path
+    const svgs = [];
+    for (const batch of batches) {
+      if (!batch.left.length) continue;
+      const pos = batch.left.reduce((p1, p2) => p1.minPt(p2)); // topLeft of the path
+      const vs = batch.left.concat(batch.right.reverse());
+
+      // move a sliding window over each vertex
+      let updatedVs = [];
+      for (let vi = 0; vi < vs.length; vi++) {
+        const prevV = vs[vi - 1] || arr.last(vs);
+        const currentV = vs[vi];
+        const nextV = vs[vi + 1] || arr.first(vs);
+
+        // replace the vertex by two adjacent ones offset by distance
+        const offset = 6;
+        const offsetV1 = prevV.subPt(currentV).normalized().scaleBy(offset);
+        const p1 = currentV.addPt(offsetV1);
+        p1._next = offsetV1.scaleBy(-1);
+        const offsetV2 = nextV.subPt(currentV).normalized().scaleBy(offset);
+        const p2 = currentV.addPt(offsetV2);
+        p2._prev = offsetV2.scaleBy(-1);
+
+        updatedVs.push(p1, p2);
+      }
+
+      updatedVs = updatedVs.map(p => ({
+        position: p.subPt(pos), isSmooth: true, controlPoints: { next: p._next || pt(0), previous: p._prev || pt(0) }
+      })
+      );
+
+      const d = getSvgVertices(updatedVs);
+      const { y: minY, x: minX } = updatedVs.map(p => p.position).reduce((p1, p2) => p1.minPt(p2));
+      const { y: maxY, x: maxX } = updatedVs.map(p => p.position).reduce((p1, p2) => p1.maxPt(p2));
+      const height = maxY - minY;
+      const width = maxX - minX;
+      const pathNode = this.doc.createElementNS(svgNs, 'path');
+      pathNode.setAttribute('fill', selectionColor.toString());
+      pathNode.setAttribute('d', d);
+
+      const svgNode = this.doc.createElementNS(svgNs, 'svg');
+      svgNode.setAttribute('style', `position: absolute; left: ${pos.x}px;top: ${pos.y}px; width: ${width}px; height: ${height}px`);
+
+      svgNode.appendChild(pathNode);
+      svgs.push(svgNode);
+    }
+
+    return svgs;
+  }
+
+  /**
+   * Since we can not control the selection of HTML DOM-Nodes we wing it ourselves.
+   * Here we render a custom DOM representation of the current selection within a TextMorph.
+   * @param {Text} morph - The TextMorph to be rendered.
+   * @param {Selection} selection - The selection to be rendered.
+   * @param {Boolean} diminished - Wether or not to render the cursor diminished.
+   * @param {Integer} cursroWidth - The width of the cursor.
+   */
+  renderSelectionPart (morph, selection, diminished = false, cursorWidth = 2) {
+    if (!selection) return [];
+
+    const { textLayout } = morph;
+
+    const { start, end, cursorVisible, selectionColor } = selection;
+    const { document, cursorColor, fontColor } = morph;
+    const isReverse = selection.isReverse();
+    const startBounds = textLayout.boundsFor(morph, start);
+    const maxBounds = textLayout.computeMaxBoundsForLineSelection(morph, selection);
+    const endBounds = textLayout.boundsFor(morph, end);
+    const startPos = pt(startBounds.x, maxBounds.y);
+    const endPos = pt(endBounds.x, endBounds.y);
+    const leadLineHeight = startBounds.height;
+    const endLineHeight = endBounds.height;
+    const cursorPos = isReverse ? pt(startBounds.x, startBounds.y) : endPos;
+    const cursorHeight = isReverse ? leadLineHeight : endLineHeight;
+    const renderedCursor = this.cursor(cursorPos, cursorHeight, cursorVisible, diminished, cursorWidth, cursorColor);
+
+    if (selection.isEmpty()) return [renderedCursor];
+
+    // render selection layer
+    const slices = [];
+    let row = selection.start.row;
+    let yOffset = document.computeVerticalOffsetOf(row) + morph.padding.top();
+    const paddingLeft = morph.padding.left();
+    const bufferOffset = 50; // todo: what does this do?
+
+    let charBounds,
+      selectionTopLeft,
+      selectionBottomRight,
+      isFirstLine,
+      renderedSelectionPart,
+      cb, line, isWrapped;
+
+    // extract the slices the selection is comprised of
+    while (row <= selection.end.row) {
+      line = document.getLine(row);
+
+      if (row < morph.viewState.firstVisibleRow - bufferOffset) { // selected lines before the visible ones
+        yOffset += line.height;
+        row++;
+        continue;
+      }
+
+      if (row > morph.viewState.lastVisibleRow + bufferOffset) break; // selected lines after the visible ones
+
+      // selected lines (rows) that are visible
+      charBounds = textLayout.charBoundsOfRow(morph, row).map(Rectangle.fromLiteral);
+      isFirstLine = row == selection.start.row;
+      isWrapped = charBounds[0].bottom() < arr.last(charBounds).top();
+
+      if (isWrapped) {
+        // since wrapped lines spread multiple "rendered" rows, we need to do add in a couple of
+        // additional selection parts here
+        const rangesToRender = textLayout.rangesOfWrappedLine(morph, row).map(r => r.intersect(selection));
+        let isFirstSubLine = isFirstLine;
+        let subLineMinY = 0;
+        let subCharBounds;
+        let subLineMaxBottom;
+        for (const r of rangesToRender) {
+          if (r.isEmpty()) continue;
+
+          subCharBounds = charBounds.slice(r.start.column, r.end.column);
+
+          subLineMinY = isFirstSubLine ? arr.min(subCharBounds.map(cb => cb.top())) : subLineMinY;
+          subLineMaxBottom = arr.max(subCharBounds.map(cb => cb.bottom()));
+
+          cb = subCharBounds[0];
+          selectionTopLeft = pt(paddingLeft + cb.left(), yOffset + subLineMinY);
+
+          cb = arr.last(subCharBounds);
+          selectionBottomRight = pt(paddingLeft + cb.right(), yOffset + subLineMaxBottom);
+
+          subLineMinY = subLineMaxBottom;
+          isFirstSubLine = false;
+
+          slices.push(Rectangle.fromAny(selectionTopLeft, selectionBottomRight));
+        }
+      } else {
+        const isLastLine = row == selection.end.row;
+        const startIdx = isFirstLine ? selection.start.column : 0;
+        const endIdx = isLastLine ? selection.end.column : charBounds.length - 1;
+        const lineMinY = isFirstLine && arr.min(charBounds.slice(startIdx, endIdx + 1).map(cb => cb.top())) || 0;
+        const emptyBuffer = startIdx >= endIdx ? 5 : 0;
+
+        cb = charBounds[startIdx];
+        selectionTopLeft = pt(paddingLeft + (cb ? cb.left() : arr.last(charBounds).right()), yOffset + lineMinY);
+
+        cb = charBounds[endIdx];
+        if (selection.includingLineEnd) { selectionBottomRight = pt(morph.width - morph.padding.right(), yOffset + lineMinY + line.height); } else {
+          const excludeCharWidth = isLastLine && selection.end.column <= charBounds.length - 1;
+          selectionBottomRight = pt(paddingLeft + (cb ? (excludeCharWidth ? cb.left() : cb.right()) : arr.last(charBounds).right()) + emptyBuffer, yOffset + lineMinY + line.height);
+        }
+
+        slices.push(Rectangle.fromAny(selectionTopLeft, selectionBottomRight));
+      }
+
+      yOffset += line.height;
+      row++;
+    }
+
+    const renderedSelection = this.selectionLayerRounded(slices, selectionColor, morph);
+
+    renderedSelection.push(renderedCursor);
+    return renderedSelection;
+  }
+
+  /**
+   * When a TextMorph is set up to support selections we render our custom
+   * selection layer instead of the HTML one which we can not control.
+   * @param {Text} morph - The TextMorph to be rendered.
+   */
+  renderSelectionLayer (morph) {
+    if (!morph.document) return []; // fixme: hackz
+    const cursorWidth = morph.cursorWidth || 1;
+    const sel = morph.selection;
+    if (morph.inMultiSelectMode()) {
+      const selectionLayer = [];
+      const sels = sel.selections; let i = 0;
+      for (; i < sels.length - 1; i++) { selectionLayer.push(...this.renderSelectionPart(morph, sels[i], true/* diminished */, 2)); }
+      selectionLayer.push(...this.renderSelectionPart(morph, sels[i], false/* diminished */, 4));
+      return selectionLayer;
+    } else {
+      return this.renderSelectionPart(morph, sel, false, cursorWidth);
+    }
+  }
+
+  /**
+   * Renders a TextMorph's text cursor.
+   * @param {Point} pos - The slices to render.
+   * @param {Number} height - The slices to render.
+   * @param {Boolean} visible - Wether or not to display the cursor.
+   * @param {Boolean} diminished - Wether or not to render the cursor diminished.
+   * @param {Number} width - The width of the cursor in pixels.
+   * @param {Color} color - The color of the cursor.
+   */
+  cursor (pos, height, visible, diminished, width, color) {
+    const node = this.doc.createElement('div');
+    node.classList.add('newtext-cursor');
+    if (diminished) node.classList.add('diminished');
+    node.style.left = pos.x - Math.ceil(width / 2) + 'px';
+    node.style.top = pos.y + 'px';
+    node.style.width = width + 'px';
+    node.style.height = height + 'px';
+    node.style.display = visible ? '' : 'none';
+    node.style.background = color || 'black';
+    return node;
+  }
+
   nodeForText (morph) {
     const node = this.doc.createElement('div');
     const textLayer = this.textLayerNodeFor(morph);
+    if (!morph.readOnly) {
+      const textLayerForFontMeasure = this.textLayerNodeFor(morph);
+      textLayerForFontMeasure.classList.add('font-measure');
+      node.appendChild(textLayerForFontMeasure);
+    }
 
     node.appendChild(textLayer);
     textLayer.append(...this.renderAllLines(morph));
-    return node;
-    // current goal: autofitted text morph without submorphs without layouting and static text
-    // maybe introduce the selection property in the next step
 
+    if (morph.document) {
+      this.updateLineExtents(morph, node);
+    }
+
+    node.append(...this.renderSelectionLayer(morph));
+    return node;
     // TODO: submorphs and stuff (see renderMorphFast in text/renderer.js)
+  }
+
+  patchSelectionLayer (node, morph) {
+    debugger;
+    node.querySelectorAll('.newtext-cursor').forEach(c => c.remove());
+    node.querySelectorAll('svg').forEach(s => s.remove());
+    node.append(...this.renderSelectionLayer(morph));
+    morph.renderingState.renderedSelection = morph.selection;
   }
 
   // -=-=-=-=-=-=-=-=-=-
