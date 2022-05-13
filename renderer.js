@@ -946,6 +946,91 @@ export default class Stage0Renderer {
     morph.renderingState.selection = morph.selection; // not yet working
   }
 
+  /**
+   * Renders a slice of a single/multiline marker.
+   * @param {Text} morph - The text morph owning the markers.
+   * @param {TextPosition} start - The position in the text where the marker starts.
+   * @param {TextPosition} end - The position in the text where the marker ends.
+   * @param {CSSStyle} style - Custom styles for the marker to override the defaults.
+   * @param {Boolean} entireLine - Flag to indicate wether or not the marker part covers the entire line.
+   * @return {VNode} A virtual dom node representing the respective part of the marker.
+   */
+  renderMarkerPart (morph, start, end, style, entireLine = false) {
+    let startX = 0; let endX = 0; let y = 0; let height = 0;
+    const { document: doc, textLayout } = morph;
+    const line = doc.getLine(start.row);
+    if (entireLine) {
+      const { padding } = morph;
+      startX = padding.left();
+      y = padding.top() + doc.computeVerticalOffsetOf(start.row);
+      endX = startX + line.width;
+      height = line.height;
+    } else {
+      ({ x: startX, y } = textLayout.boundsFor(morph, start));
+      ({ x: endX, height } = textLayout.boundsFor(morph, end));
+    }
+    height = Math.ceil(height);
+    debugger;
+    const node = this.doc.createElement('div');
+    node.classList.add('newtext-marker-layer');
+    node.style.left = startX + 'px';
+    node.style.top = y + 'px';
+    node.style.height = height + 'px';
+    node.style.width = endX - startX + 'px';
+    for (const prop in style) {
+      node.style[prop] = style[prop];
+    }
+
+    return node;
+  }
+
+  /**
+   * Renders the layer comprising all the markers of the TextMorph.
+   * @param {Text} morph - The TextMorph owning the markers.
+   */
+  renderMarkerLayer (morph) {
+    const {
+      markers,
+      textLayout
+      // fixmed viewState: { firstVisibleRow, lastVisibleRow }
+    } = morph;
+    const parts = [];
+
+    if (!markers) return parts;
+
+    for (const m of markers) {
+      const { style, range: { start, end } } = m;
+
+      // fixme if (end.row < firstVisibleRow || start.row > lastVisibleRow) continue;
+
+      // single line
+      if (start.row === end.row) {
+        parts.push(this.renderMarkerPart(morph, start, end, style));
+        continue;
+      }
+
+      // multiple lines
+      // first line
+      parts.push(this.renderMarkerPart(morph, start, morph.lineRange(start.row).end, style));
+      // lines in the middle
+      for (let row = start.row + 1; row <= end.row - 1; row++) {
+        const { start: lineStart, end: lineEnd } = morph.lineRange(row);
+        parts.push(this.renderMarkerPart(morph, lineStart, lineEnd, style, true));
+      }
+      // last line
+      parts.push(this.renderMarkerPart(morph, { row: end.row, column: 0 }, end, style));
+    }
+
+    return parts; // returns an array of nodes
+  }
+
+  // fixme -- investigate
+  patchMarkerLayer (node, morph) {
+    node.querySelectorAll('div.newtext-marker-layer').forEach(s => s.remove());
+    node.append(...this.renderMarkerLayer(morph));
+    morph.renderingState.markers = morph.markers; // not yet working
+  }
+
   // -=-=-=-=-=-=-=-=-=-
   // SVGs and Polygons
   // -=-=-=-=-=-=-=-=-=-      
