@@ -750,6 +750,7 @@ export default class Stage0Renderer {
       pathNode.setAttribute('d', d);
 
       const svgNode = this.doc.createElementNS(svgNs, 'svg');
+      svgNode.classList.add('selection');
       svgNode.setAttribute('style', `position: absolute; left: ${pos.x}px;top: ${pos.y}px; width: ${width}px; height: ${height}px`);
 
       svgNode.appendChild(pathNode);
@@ -939,8 +940,8 @@ export default class Stage0Renderer {
   }
 
   patchSelectionLayer (node, morph) {
-    node.querySelectorAll('.newtext-cursor').forEach(c => c.remove());
-    node.querySelectorAll('svg').forEach(s => s.remove());
+    node.querySelectorAll('div.newtext-cursor').forEach(c => c.remove());
+    node.querySelectorAll('svg.selection').forEach(s => s.remove());
     node.append(...this.renderSelectionLayer(morph));
     morph.renderingState.selection = morph.selection; // not yet working
   }
