@@ -881,7 +881,7 @@ export default class Stage0Renderer {
    * @param {Text} morph - The TextMorph to be rendered.
    */
   renderSelectionLayer (morph) {
-    if (!morph.document) return []; // fixme: hackz
+    if (!morph.document || !morph.selection) return [];
     const cursorWidth = morph.cursorWidth || 1;
     const sel = morph.selection;
     if (morph.inMultiSelectMode()) {
@@ -933,17 +933,16 @@ export default class Stage0Renderer {
       this.updateLineExtents(morph, node);
     }
 
-    node.append(...this.renderSelectionLayer(morph));
+    // node.append(...this.renderSelectionLayer(morph));
     return node;
     // TODO: submorphs and stuff (see renderMorphFast in text/renderer.js)
   }
 
   patchSelectionLayer (node, morph) {
-    debugger;
     node.querySelectorAll('.newtext-cursor').forEach(c => c.remove());
     node.querySelectorAll('svg').forEach(s => s.remove());
     node.append(...this.renderSelectionLayer(morph));
-    morph.renderingState.renderedSelection = morph.selection;
+    morph.renderingState.selection = morph.selection; // not yet working
   }
 
   // -=-=-=-=-=-=-=-=-=-

@@ -34,7 +34,7 @@ export const cssForTexts = `
       box-sizing: border-box;
       position: absolute;
       white-space: pre;
-      z-index: 0;
+      z-index: 10; /* fixme: hackz */
       min-width: 100%;
       pointer-events: none;
     }
