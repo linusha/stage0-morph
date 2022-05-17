@@ -6,20 +6,29 @@ import { Morph, ProportionalLayout, Ellipse } from "lively.morphic";
 import { Canvas } from "lively.components/canvas.js";
 import { SmartText } from "lively.morphic/text/smart-text.js";
 
+const stage0m = new Stage0Morph({extent: pt(500,500), fill: Color.white})
+stage0m.openInWorld()
+
 let fullSmartText = new SmartText({textAndAttributes: ["Hello", null], name: 'test'})
-console.log(fullSmartText._node)
+fullSmartText.textAndAttributes = ['Helloo', {fontSize: 30}, 'Robin\n', {backgroundColor: '#FFFF00'}, 'new line\n',null,'new line',null]
 fullSmartText.readOnly = false;
+fullSmartText.readOnly = true;
+
+stage0m.addMorph(fullSmartText)
+fullSmartText.fit()
+fullSmartText.extent
+
+fullSmartText.selectionMode = 'native'
 
 fullSmartText.textAndAttributes
 fullSmartText.forceRerender()
 fullSmartText.remove()
 
-stage0m.addMorph(fullSmartText)
+
 fullSmartText.textAndAttributes = 'testerino'
-fullSmartText.textAndAttributes = ['Helloo', {fontSize: 30}, 'Robin\n', {backgroundColor: '#FFFF00'}, 'new line\n',null,'new line',null]
+
 fullSmartText.selection
-const stage0m = new Stage0Morph({extent: pt(500,500), fill: Color.white})
-stage0m.openInWorld()
+
 stage0m.remove()
 
 // TODO: for these morphs hook are not toggled i believe!

@@ -10,6 +10,7 @@ import { cssForTexts } from './css-decls.js';
 import { Rectangle, pt } from 'lively.graphics';
 import { objectReplacementChar } from 'lively.morphic/text/document.js';
 import { splitTextAndAttributesIntoLines } from 'lively.morphic/text/attributes.js';
+import Path from 'lively.lang/Path.js';
 
 const svgNs = 'http://www.w3.org/2000/svg';
 
@@ -499,7 +500,7 @@ export default class Stage0Renderer {
   }
 
   renderTextAndAttributes (node, morph) {
-    const textNode = Array.from(node.children).find(n => n.className.includes('newtext-text-layer'));
+    const textNode = node.querySelectorAll('.newtext-text-layer')[0];
     textNode.replaceChildren(...this.renderAllLines(morph));
     if (morph.document) this.updateLineExtents(morph, node);
     morph.renderingState.renderedTextAndAttributes = morph.textAndAttributes;
@@ -918,31 +919,105 @@ export default class Stage0Renderer {
     return node;
   }
 
-  nodeForText (morph) {
+  /**
+   * When the TextMorph is set up to be interactive we decouple scrolling of the text
+   * via a separate scroll layer that captures the scroll events from the user.
+   * @param {Text} morph - The TextMorph to be rendered.
+   */
+  renderScrollLayer (morph) {
+    const horizontalScrollBarVisible = morph.document.width > morph.width;
+    const scrollBarOffset = horizontalScrollBarVisible ? morph.scrollbarOffset : pt(0, 0);
+    const verticalPaddingOffset = morph.padding.top() + morph.padding.bottom();
     const node = this.doc.createElement('div');
+    node.classList.add('scrollLayer');
+    node.style.position = 'absolute';
+    node.style.top = '0px';
+    node.style.width = '100%';
+    node.style.height = '100%';
+    // fixme: we ignore fast scroll for now (trying to eliminate it)
+    // if (morph.viewState.fastScroll) {
+    //   if (morph.scrollActive) node.attributes.style.overflow = morph.clipMode;
+    //   else node.attributes.style.overflow = 'hidden';
+    // }
+
+    const subnode = this.doc.createElement('div');
+    subnode.style.width = Math.max(morph.document.width, morph.width) + 'px';
+    subnode.style.height = Math.max(morph.document.height, morph.height) - scrollBarOffset.y + verticalPaddingOffset + 'px';
+
+    node.appendChild(subnode);
+    return node;
+  }
+
+  scrollWrapperFor (morph) {
+    const scrollWrapper = this.doc.createElement('div');
+    scrollWrapper.classList.add('scrollWrapper');
+    scrollWrapper.style['pointer-events'] = 'none',
+    scrollWrapper.style.position = 'absolute',
+    scrollWrapper.style.width = '100%',
+    scrollWrapper.style.height = '100%',
+    scrollWrapper.style.transform = `translate(-${morph.scroll.x}px, -${morph.scroll.y}px)`;
+    return scrollWrapper;
+  }
+
+  nodeForText (morph) {
+    let scrollLayerNode;
+    const node = this.doc.createElement('div');
+
     const textLayer = this.textLayerNodeFor(morph);
+
     if (!morph.readOnly) {
+      if (morph.document) // fixme hack
+      {
+        scrollLayerNode = this.renderScrollLayer(morph);
+        node.appendChild(scrollLayerNode);
+      }
       const textLayerForFontMeasure = this.textLayerNodeFor(morph);
       textLayerForFontMeasure.classList.add('font-measure');
       node.appendChild(textLayerForFontMeasure);
     }
 
-    node.appendChild(textLayer);
+    // fixme: trying to eliminate fastscroll completely
+    // const fastScroll = morph.viewState.fastScroll && !Path('layout.renderViaCSS').get(morph);
+
+    if (!morph.readOnly && morph.document) { // fixme hack
+      const scrollWrapper = this.scrollWrapperFor(morph);
+      node.appendChild(scrollWrapper);
+      scrollWrapper.appendChild(textLayer);
+    } else node.appendChild(textLayer);
+
     textLayer.append(...this.renderAllLines(morph));
 
     if (morph.document) {
       this.updateLineExtents(morph, node);
     }
 
-    // node.append(...this.renderSelectionLayer(morph));
     return node;
     // TODO: submorphs and stuff (see renderMorphFast in text/renderer.js)
   }
 
+  handleScrollLayer (node, morph) {
+    if (morph.renderingState.needsScrollLayerAdded) {
+      const scrollLayer = this.renderScrollLayer(morph);
+      const scrollWrapper = this.scrollWrapperFor(morph);
+      node.childNodes.forEach(c => scrollWrapper.appendChild(c));
+      node.appendChild(scrollLayer);
+      node.appendChild(scrollWrapper);
+      delete morph.renderingState.needsScrollLayerAdded;
+    } else if (morph.renderingState.needsScrollLayerRemoved) {
+      node.querySelectorAll('.scrollLayer').forEach(n => n.remove());
+      const wrapper = node.querySelectorAll('.scrollWrapper')[0];
+      wrapper.childNodes.forEach(c => node.append(c));
+      wrapper.remove();
+      delete morph.renderingState.needsScrollLayerRemoved;
+    }
+  }
+
   patchSelectionLayer (node, morph) {
+    if (!node) return; // fixme
     node.querySelectorAll('div.newtext-cursor').forEach(c => c.remove());
     node.querySelectorAll('svg.selection').forEach(s => s.remove());
-    node.append(...this.renderSelectionLayer(morph));
+    const nodeToAppendTo = morph.readOnly ? node : node.querySelectorAll('.scrollWrapper')[0];
+    nodeToAppendTo.append(...this.renderSelectionLayer(morph));
     morph.renderingState.selection = morph.selection; // not yet working
   }
 
@@ -970,7 +1045,6 @@ export default class Stage0Renderer {
       ({ x: endX, height } = textLayout.boundsFor(morph, end));
     }
     height = Math.ceil(height);
-    debugger;
     const node = this.doc.createElement('div');
     node.classList.add('newtext-marker-layer');
     node.style.left = startX + 'px';
@@ -1024,10 +1098,11 @@ export default class Stage0Renderer {
     return parts; // returns an array of nodes
   }
 
-  // fixme -- investigate
   patchMarkerLayer (node, morph) {
+    if (!node) return; // fixme
     node.querySelectorAll('div.newtext-marker-layer').forEach(s => s.remove());
-    node.append(...this.renderMarkerLayer(morph));
+    const nodeToAppendTo = morph.readOnly ? node : node.querySelectorAll('.scrollWrapper')[0];
+    nodeToAppendTo.append(...this.renderMarkerLayer(morph));
     morph.renderingState.markers = morph.markers; // not yet working
   }
 
