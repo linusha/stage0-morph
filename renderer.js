@@ -324,6 +324,8 @@ export default class Stage0Renderer {
 
     applyStylingToNode(morph, node);
 
+    // fixme: hackz
+    if (morph.isSmartText && !morph.readOnly) node.style.overflow = 'hidden';
     // TODO: this needs to call the after render hooks later on
     morph.renderingState.needsRerender = false;
   }
@@ -934,11 +936,7 @@ export default class Stage0Renderer {
     node.style.top = '0px';
     node.style.width = '100%';
     node.style.height = '100%';
-    // fixme: we ignore fast scroll for now (trying to eliminate it)
-    // if (morph.viewState.fastScroll) {
-    //   if (morph.scrollActive) node.attributes.style.overflow = morph.clipMode;
-    //   else node.attributes.style.overflow = 'hidden';
-    // }
+    node.style['overflow-anchor'] = 'none';
 
     const subnode = this.doc.createElement('div');
     subnode.style.width = Math.max(morph.document.width, morph.width) + 'px';
@@ -957,6 +955,22 @@ export default class Stage0Renderer {
     scrollWrapper.style.height = '100%',
     scrollWrapper.style.transform = `translate(-${morph.scroll.x}px, -${morph.scroll.y}px)`;
     return scrollWrapper;
+  }
+
+  adjustScrollLayerChildSize (node, morph) {
+    const scrollLayer = node.querySelectorAll('.scrollLayer')[0];
+    if (!scrollLayer) return;
+    const horizontalScrollBarVisible = morph.document.width > morph.width;
+    const scrollBarOffset = horizontalScrollBarVisible ? morph.scrollbarOffset : pt(0, 0);
+    const verticalPaddingOffset = morph.padding.top() + morph.padding.bottom();
+    scrollLayer.firstChild.style.width = Math.max(morph.document.width, morph.width) + 'px';
+    scrollLayer.firstChild.style.height = Math.max(morph.document.height, morph.height) - scrollBarOffset.y + verticalPaddingOffset + 'px';
+  }
+
+  scrollScrollLayerFor (node, morph) {
+    const scrollWrapper = node.querySelectorAll('.scrollWrapper')[0];
+    if (!scrollWrapper) return;
+    scrollWrapper.style.transform = `translate(-${morph.scroll.x}px, -${morph.scroll.y}px)`;
   }
 
   nodeForText (morph) {
@@ -1056,6 +1070,19 @@ export default class Stage0Renderer {
     }
 
     return node;
+  }
+
+  /**
+   * @param {type} node - description
+   * @param {type} morph - description
+   * @param {Boolean} fromMorph - If this is true, we set the correct clipMode according to the Morph. Otherwise, we sett hidden.
+   */
+  patchClipModeForText (node, morph, scrollActive) {
+    const scrollLayer = node.querySelectorAll('.scrollLayer')[0];
+    if (!scrollLayer) return;
+
+    if (scrollActive) scrollLayer.style.overflow = morph.clipMode;
+    else scrollLayer.style.overflow = 'hidden';
   }
 
   /**

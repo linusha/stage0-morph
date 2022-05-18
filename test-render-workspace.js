@@ -18,8 +18,6 @@ stage0m.addMorph(fullSmartText)
 fullSmartText.fit()
 fullSmartText.extent
 
-fullSmartText.selectionMode = 'native'
-
 fullSmartText.textAndAttributes
 fullSmartText.forceRerender()
 fullSmartText.remove()
