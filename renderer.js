@@ -1,6 +1,3 @@
-
-import { keyed, noOpUpdate } from 'esm://cache/stage0@0.0.25/keyed';
-
 import { applyAttributesToNode, applyStylingToNode } from './helpers.js';
 import { withoutAll } from 'lively.lang/array.js';
 import { arr, num, obj } from 'lively.lang';
@@ -11,6 +8,7 @@ import { Rectangle, pt } from 'lively.graphics';
 import { objectReplacementChar } from 'lively.morphic/text/document.js';
 import { splitTextAndAttributesIntoLines } from 'lively.morphic/text/attributes.js';
 import Path from 'lively.lang/Path.js';
+import { keyed, noOpUpdate } from './keyed.js';
 
 const svgNs = 'http://www.w3.org/2000/svg';
 
