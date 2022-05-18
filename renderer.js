@@ -7,7 +7,7 @@ import { cssForTexts } from './css-decls.js';
 import { Rectangle, pt } from 'lively.graphics';
 import { objectReplacementChar } from 'lively.morphic/text/document.js';
 import { splitTextAndAttributesIntoLines } from 'lively.morphic/text/attributes.js';
-import Path from 'lively.lang/Path.js';
+
 import { keyed, noOpUpdate } from './keyed.js';
 
 const svgNs = 'http://www.w3.org/2000/svg';
@@ -977,6 +977,14 @@ export default class Stage0Renderer {
 
     const textLayer = this.textLayerNodeFor(morph);
 
+    /*
+      The scrollLayer is mecessary for Text that can be interactively edited.
+      For performance reasons, we do not render all lines in this case, but only the ones that are visible.
+      This means, that when scrolling in such a morph, the lines (divs) are exchanged/updated.
+      For some reason, changing the subnodes of a DOM node that is simultaneously scrolled will lead to unsmooth scrolling.
+      With this trick, the scrollLayer is the node that actually gets scrolled, while we can exchange all line nodes as we like.
+      Since for non-interactive text all lines are rendered once, this trick in not needed.
+    */
     if (!morph.readOnly) {
       if (morph.document) // fixme hack
       {
@@ -987,9 +995,6 @@ export default class Stage0Renderer {
       textLayerForFontMeasure.classList.add('font-measure');
       node.appendChild(textLayerForFontMeasure);
     }
-
-    // fixme: trying to eliminate fastscroll completely
-    // const fastScroll = morph.viewState.fastScroll && !Path('layout.renderViaCSS').get(morph);
 
     if (!morph.readOnly && morph.document) { // fixme hack
       const scrollWrapper = this.scrollWrapperFor(morph);
