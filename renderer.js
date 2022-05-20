@@ -1014,6 +1014,10 @@ export default class Stage0Renderer {
 
   handleScrollLayer (node, morph) {
     if (morph.renderingState.needsScrollLayerAdded) {
+      if (node.querySelector('.scrollWrapper')) {
+        delete morph.renderingState.needsScrollLayerAdded;
+        return;
+      }
       const scrollLayer = this.renderScrollLayer(morph);
       const scrollWrapper = this.scrollWrapperFor(morph);
       node.childNodes.forEach(c => scrollWrapper.appendChild(c));

@@ -9,8 +9,19 @@ import { SmartText } from "lively.morphic/text/smart-text.js";
 const stage0m = new Stage0Morph({extent: pt(500,500), fill: Color.white})
 stage0m.openInWorld()
 
-let fullSmartText = new SmartText({textAndAttributes: ["Hello", null], name: 'test'})
-fullSmartText.textAndAttributes = ['Helloo', {fontSize: 30}, 'Robin\n', {backgroundColor: '#FFFF00'}, 'new line\n',null,'new line',null]
+let fullSmartText = new SmartText({textAndAttributes: ['Helloo Robin\n', null, 
+                                   'new line\n',null,
+                                   'new line\n',null,
+                                   'new line\n',null,
+                                   'new line\n',null,
+                                   'new line\n',null,
+                                   'new line\n',null,
+                                   'new line\n',null,
+                                   'new line\n',null,
+                                  ], name: 'test',
+                                  fixedHeight: true,
+                                  height: 40,
+                                   readOnly: false})
 fullSmartText.readOnly = false;
 fullSmartText.readOnly = true;
 
