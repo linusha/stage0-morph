@@ -448,7 +448,7 @@ export default class Stage0Renderer {
     const style = { overflow: 'hidden', top: '0px', left: '0px' };
     const padRight = padLeft + padWidth;
     const padBottom = padTop + padHeight;
-    let textLayerClasses = 'newtext-text-layer';
+    let textLayerClasses = 'newtext-text-layer actual';
 
     switch (fixedWidth && lineWrapping) {
       case true:
@@ -501,6 +501,7 @@ export default class Stage0Renderer {
 
   renderTextAndAttributes (node, morph) {
     const textNode = node.querySelectorAll('.newtext-text-layer')[0];
+    const textNode = node.querySelector('.actual');
     textNode.replaceChildren(...this.renderAllLines(morph));
     if (morph.document) this.updateLineExtents(morph, node);
     morph.renderingState.renderedTextAndAttributes = morph.textAndAttributes;
@@ -655,7 +656,7 @@ export default class Stage0Renderer {
   measureBoundsFor (morph) {
     const node = this.getNodeForMorph(morph);
 
-    const textNode = Array.from(node.children).find(n => n.className.includes('newtext-text-layer'));
+    const textNode = node.querySelector('.actual');
     const prevParent = textNode.parentNode;
     this.placeholder.appendChild(textNode);
     const domMeasure = textNode.getBoundingClientRect();
@@ -992,6 +993,8 @@ export default class Stage0Renderer {
         node.appendChild(scrollLayerNode);
       }
       const textLayerForFontMeasure = this.textLayerNodeFor(morph);
+      // hackz
+      textLayerForFontMeasure.classList.remove('actual');
       textLayerForFontMeasure.classList.add('font-measure');
       node.appendChild(textLayerForFontMeasure);
     }
