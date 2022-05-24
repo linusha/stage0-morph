@@ -424,6 +424,10 @@ export default class Stage0Renderer {
     return node;
   }
 
+  textLayerNodeFunctionFor (morph) {
+    return () => this.textLayerNodeFor(morph);
+  }
+
   textLayerNodeFor (morph) {
     const {
       height,
@@ -500,10 +504,33 @@ export default class Stage0Renderer {
   }
 
   renderTextAndAttributes (node, morph) {
-    const textNode = node.querySelectorAll('.newtext-text-layer')[0];
     const textNode = node.querySelector('.actual');
-    textNode.replaceChildren(...this.renderAllLines(morph));
-    if (morph.document) this.updateLineExtents(morph, node);
+    if (morph.readOnly) textNode.replaceChildren(...this.renderAllLines(morph));
+    else {
+      const linesToRender = this.collectVisibleLinesForRendering(morph);
+      keyed('row',
+        textNode,
+        morph.renderingState.renderedLines,
+        linesToRender,
+        item => this.nodeForLine(item, morph),
+        noOpUpdate,
+        textNode.firstChild,
+        null
+      );
+      morph.renderingState.renderedLines = morph.renderingState.visibleLines;
+      let i = 0; // the first child is always the filler, we can skip it
+      for (const line of morph.renderingState.renderedLines) {
+        i++;
+        this.nodeFor;
+        if (!line.needsRerender) continue;
+        const oldLineNode = textNode.children[i];
+        const newLineNode = this.nodeForLine(line, morph);
+        textNode.replaceChild(newLineNode, oldLineNode);
+      }
+    }
+    if (morph.document) {
+      this.updateLineExtents(morph, node);
+    }
     morph.renderingState.renderedTextAndAttributes = morph.textAndAttributes;
   }
 
@@ -528,7 +555,10 @@ export default class Stage0Renderer {
    * Thus returns an array of divs that can each contain multiple spans 
    */
   nodeForLine (lineObject, morph) {
-    const line = lineObject;
+    const line = lineObject.isLine ? lineObject.textAndAttributes : lineObject;
+    if (lineObject.isLine) {
+      lineObject.needsRerender = false;
+    }
     const renderedChunks = [];
 
     let content, attr,
@@ -614,7 +644,6 @@ export default class Stage0Renderer {
     if (textAlign) lineStyle.textAlign = textAlign;
     if (letterSpacing) lineStyle.letterSpacing = letterSpacing + 'px';
     if (wordSpacing) lineStyle.wordSpacing = wordSpacing + 'px';
-
     let node = this.doc.createElement('div');
     node.className = 'line';
     node.append(...renderedChunks);
@@ -623,7 +652,6 @@ export default class Stage0Renderer {
     //   if (typeof quote !== 'number') quote = 1;
     //   for (let i = quote; i--;) node = h('blockquote', {}, node);
     // }
-    node.setAttribute('id', line.id);
     return node;
   }
 
@@ -643,14 +671,76 @@ export default class Stage0Renderer {
         const newLine = this.nodeForLine(morph.textAndAttributes[i], morph);
         renderedLines.push(newLine);
       }
-    } else {
-      for (const line of splitTextAndAttributesIntoLines(morph.document.textAndAttributes)) {
-        const newLine = this.nodeForLine(line, morph);
-        renderedLines.push(newLine);
-      }
+    }
+    return renderedLines;
+  }
+
+  collectVisibleLinesForRendering (morph) {
+    const {
+      height,
+      scroll,
+      padding: { x: padLeft, y: padTop, width: padWidth, height: padHeight },
+      document: doc,
+      clipMode
+    } = morph;
+    const padRight = padLeft + padWidth;
+    const padBottom = padTop + padHeight;
+    const scrollTop = scroll.y;
+    const scrollHeight = height;
+    const lastLineNo = doc.rowCount - 1;
+    const textHeight = doc.height;
+    const clipsContent = clipMode !== 'visible';
+
+    const {
+      line: startLine,
+      offset: startOffset,
+      y: heightBefore,
+      row: startRow
+    } = doc.findLineByVerticalOffset(clipsContent ? Math.max(0, clipsContent ? scrollTop - padTop : 0) : 0) ||
+     { row: 0, y: 0, offset: 0, line: doc.getLine(0) };
+
+    const {
+      line: endLine,
+      offset: endLineOffset,
+      row: endRow
+    } = doc.findLineByVerticalOffset(clipsContent ? Math.min(textHeight, (scrollTop - padTop) + scrollHeight) : textHeight) ||
+     { row: lastLineNo, offset: 0, y: 0, line: doc.getLine(lastLineNo) };
+
+    const firstVisibleRow = clipsContent ? startRow : 0;
+    const firstFullyVisibleRow = startOffset === 0 ? startRow : startRow + 1;
+    const lastVisibleRow = clipsContent ? endRow + 1 : lastLineNo;
+    const lastFullyVisibleRow = !endLine || endLineOffset === endLine.height ? endRow : endRow - 1;
+
+    this.maxVisibleLines = Math.max(this.maxVisibleLines || 1, lastVisibleRow - firstVisibleRow + 1);
+
+    // NEW NEW NEW 
+    morph.renderingState.maxVisibleLines = this.maxVisibleLines;
+    morph.renderingState.startLine = firstVisibleRow;
+
+    const visibleLines = [];
+
+    let line = startLine; let i = 0;
+    while (i < this.maxVisibleLines) {
+      visibleLines.push(line);
+      i++;
+      line = line.nextLine();
+      if (!line) break;
     }
 
-    return renderedLines;
+    // TODO: extract
+    const textLayer = this.getNodeForMorph(morph).querySelector('.actual');
+    const filler = textLayer.querySelector('.newtext-before-filler');
+    if (filler) {
+      filler.style.height = heightBefore + 'px';
+    } else {
+      const spacer = this.doc.createElement('div');
+      spacer.classList.add('newtext-before-filler');
+      spacer.style.height = heightBefore + 'px';
+      textLayer.insertBefore(spacer, textLayer.firstChild);
+    }
+
+    morph.renderingState.visibleLines = visibleLines;
+    return visibleLines;
   }
 
   measureBoundsFor (morph) {
@@ -672,10 +762,12 @@ export default class Stage0Renderer {
     this.placeholder.appendChild(node);
     let i = 0;
     const lineNodes = node.querySelectorAll('.line');
-    for (const line of morph.document.lines) {
+    let line = morph.document.lines[morph.renderingState.startLine];
+    while (i < morph.renderingState.maxVisibleLines && line) {
       const currLineNode = lineNodes[i];
       const { width, height } = currLineNode.getBoundingClientRect();
       line.changeExtent(width, height);
+      line = line.nextLine();
       i++;
     }
     if (prevPar) {
@@ -772,24 +864,28 @@ export default class Stage0Renderer {
    */
   renderSelectionPart (morph, selection, diminished = false, cursorWidth = 2) {
     if (!selection) return [];
-
     const { textLayout } = morph;
 
     const { start, end, cursorVisible, selectionColor } = selection;
     const { document, cursorColor, fontColor } = morph;
     const isReverse = selection.isReverse();
+
     const startBounds = textLayout.boundsFor(morph, start);
-    const maxBounds = textLayout.computeMaxBoundsForLineSelection(morph, selection);
     const endBounds = textLayout.boundsFor(morph, end);
-    const startPos = pt(startBounds.x, maxBounds.y);
-    const endPos = pt(endBounds.x, endBounds.y);
+
     const leadLineHeight = startBounds.height;
     const endLineHeight = endBounds.height;
+
+    const endPos = pt(endBounds.x, endBounds.y);
+
     const cursorPos = isReverse ? pt(startBounds.x, startBounds.y) : endPos;
     const cursorHeight = isReverse ? leadLineHeight : endLineHeight;
     const renderedCursor = this.cursor(cursorPos, cursorHeight, cursorVisible, diminished, cursorWidth, cursorColor);
 
-    if (selection.isEmpty()) return [renderedCursor];
+    if (obj.equals(selection.start, selection.end)) return [renderedCursor];
+
+    const maxBounds = textLayout.computeMaxBoundsForLineSelection(morph, selection);
+    const startPos = pt(startBounds.x, maxBounds.y);
 
     // render selection layer
     const slices = [];
@@ -808,7 +904,7 @@ export default class Stage0Renderer {
     // extract the slices the selection is comprised of
     while (row <= selection.end.row) {
       line = document.getLine(row);
-
+      // fixme firstVisibleRow + lastVisibleRow
       if (row < morph.viewState.firstVisibleRow - bufferOffset) { // selected lines before the visible ones
         yOffset += line.height;
         row++;
@@ -970,6 +1066,12 @@ export default class Stage0Renderer {
     const scrollWrapper = node.querySelectorAll('.scrollWrapper')[0];
     if (!scrollWrapper) return;
     scrollWrapper.style.transform = `translate(-${morph.scroll.x}px, -${morph.scroll.y}px)`;
+    this.renderTextAndAttributes(node, morph);
+  }
+
+  clearTextNodeSubnodesFor (morph) {
+    const textNode = this.getNodeForMorph(morph);
+    textNode.querySelector('.actual').replaceChildren();
   }
 
   nodeForText (morph) {
@@ -1004,8 +1106,6 @@ export default class Stage0Renderer {
       node.appendChild(scrollWrapper);
       scrollWrapper.appendChild(textLayer);
     } else node.appendChild(textLayer);
-
-    textLayer.append(...this.renderAllLines(morph));
 
     if (morph.document) {
       this.updateLineExtents(morph, node);

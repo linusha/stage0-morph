@@ -9,6 +9,7 @@ import { SmartText } from "lively.morphic/text/smart-text.js";
 const stage0m = new Stage0Morph({extent: pt(500,500), fill: Color.white})
 stage0m.openInWorld()
 
+
 let fullSmartText = new SmartText({textAndAttributes: ['Helloo Robin\n', null, 
                                    'new line\n',null,
                                    'new line\n',null,
@@ -17,15 +18,20 @@ let fullSmartText = new SmartText({textAndAttributes: ['Helloo Robin\n', null,
                                    'new line\n',null,
                                    'new line\n',null,
                                    'new line\n',null,
-                                   'new line\n',null,
+                                   'new line',null,
                                   ], name: 'test',
                                   fixedHeight: true,
-                                  height: 40,
-                                   readOnly: false})
+                                  height: 80,
+                                  fixedWidth: true,
+                                  width: 300,
+                                  readOnly: false,
+                                  clipMode: 'auto',
+                                  })
 fullSmartText.readOnly = false;
 fullSmartText.readOnly = true;
 
 stage0m.addMorph(fullSmartText)
+fullSmartText.scroll = pt(0,30)
 fullSmartText.fit()
 fullSmartText.extent
 
