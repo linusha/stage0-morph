@@ -29,6 +29,9 @@ export const cssForTexts = `
 
     /*-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-*/
     /* text layer / content */
+    .font-measure {
+      visibility: 'hidden';
+    }
 
     .newtext-text-layer {
       box-sizing: border-box;
