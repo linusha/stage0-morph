@@ -1128,9 +1128,9 @@ export default class Stage0Renderer {
       node.appendChild(scrollWrapper);
       delete morph.renderingState.needsScrollLayerAdded;
     } else if (morph.renderingState.needsScrollLayerRemoved) {
-      node.querySelectorAll('.scrollLayer').forEach(n => n.remove());
-      const wrapper = node.querySelectorAll('.scrollWrapper')[0];
-      wrapper.childNodes.forEach(c => node.append(c));
+      node.querySelector('.scrollLayer').remove();
+      const wrapper = node.querySelector('.scrollWrapper');
+      Array.from(wrapper.children).forEach(c => node.append(c));
       wrapper.remove();
       delete morph.renderingState.needsScrollLayerRemoved;
     }
