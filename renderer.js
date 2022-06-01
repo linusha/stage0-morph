@@ -6,7 +6,6 @@ import { setCSSDef } from 'lively.morphic/rendering/dom-helper.js';
 import { cssForTexts } from './css-decls.js';
 import { Rectangle, pt } from 'lively.graphics';
 import { objectReplacementChar } from 'lively.morphic/text/document.js';
-import { splitTextAndAttributesIntoLines } from 'lively.morphic/text/attributes.js';
 
 import { keyed, noOpUpdate } from './keyed.js';
 
@@ -424,6 +423,10 @@ export default class Stage0Renderer {
     return node;
   }
 
+  lineNodeFunctionFor (morph) {
+    return (line) => this.nodeForLine(line, morph);
+  }
+
   textLayerNodeFunctionFor (morph) {
     return () => this.textLayerNodeFor(morph);
   }
@@ -517,7 +520,7 @@ export default class Stage0Renderer {
         textNode.firstChild,
         null
       );
-      morph.renderingState.renderedLines = morph.renderingState.visibleLines;
+      morph.renderingState.renderedLines = morph.viewState.visibleLines;
       let i = 0; // the first child is always the filler, we can skip it
       for (const line of morph.renderingState.renderedLines) {
         i++;
@@ -528,8 +531,9 @@ export default class Stage0Renderer {
         textNode.replaceChild(newLineNode, oldLineNode);
       }
     }
+
     if (morph.document) {
-      this.updateLineExtents(morph, node);
+      this.updateExtentsOfLines(textNode, morph);
     }
     morph.renderingState.renderedTextAndAttributes = morph.textAndAttributes;
   }
@@ -542,6 +546,7 @@ export default class Stage0Renderer {
     rendered.style.textAlign = 'initial';
     rendered.style.removeProperty('top');
     rendered.style.removeProperty('left');
+
     // fixme:  this addition screws up the bounds computation of the embedded submorph
     if (attr.paddingTop) rendered.style.marginTop = attr.paddingTop;
     if (attr.paddingLeft) rendered.style.marginLeft = attr.paddingLeft;
@@ -652,6 +657,9 @@ export default class Stage0Renderer {
     //   if (typeof quote !== 'number') quote = 1;
     //   for (let i = quote; i--;) node = h('blockquote', {}, node);
     // }
+    if (lineObject.isLine) {
+      node.dataset.row = lineObject.row;
+    }
     return node;
   }
 
@@ -675,7 +683,7 @@ export default class Stage0Renderer {
     return renderedLines;
   }
 
-  collectVisibleLinesForRendering (morph) {
+  collectVisibleLinesForRendering (morph, node) {
     const {
       height,
       scroll,
@@ -711,24 +719,42 @@ export default class Stage0Renderer {
     const lastVisibleRow = clipsContent ? endRow + 1 : lastLineNo;
     const lastFullyVisibleRow = !endLine || endLineOffset === endLine.height ? endRow : endRow - 1;
 
-    this.maxVisibleLines = Math.max(this.maxVisibleLines || 1, lastVisibleRow - firstVisibleRow + 1);
+    morph.maxVisibleLines = Math.max(morph.maxVisibleLines || 1, lastVisibleRow - firstVisibleRow + 1);
 
     // NEW NEW NEW 
-    morph.renderingState.maxVisibleLines = this.maxVisibleLines;
+    morph.renderingState.maxVisibleLines = morph.maxVisibleLines;
     morph.renderingState.startLine = firstVisibleRow;
 
     const visibleLines = [];
 
     let line = startLine; let i = 0;
-    while (i < this.maxVisibleLines) {
+    while (i < morph.maxVisibleLines) {
       visibleLines.push(line);
       i++;
       line = line.nextLine();
       if (!line) break;
     }
 
-    // TODO: extract
-    const textLayer = this.getNodeForMorph(morph).querySelector('.actual');
+    this.updateFillerDIV(node, heightBefore);
+
+    Object.assign(morph.viewState, {
+      scrollTop,
+      scrollHeight,
+      scrollBottom: scrollTop + scrollHeight,
+      heightBefore,
+      textHeight,
+      firstVisibleRow,
+      lastVisibleRow,
+      firstFullyVisibleRow,
+      lastFullyVisibleRow,
+      visibleLines
+    });
+
+    return visibleLines;
+  }
+
+  updateFillerDIV (node, heightBefore) {
+    const textLayer = node.querySelector('.actual');
     const filler = textLayer.querySelector('.newtext-before-filler');
     if (filler) {
       filler.style.height = heightBefore + 'px';
@@ -738,9 +764,6 @@ export default class Stage0Renderer {
       spacer.style.height = heightBefore + 'px';
       textLayer.insertBefore(spacer, textLayer.firstChild);
     }
-
-    morph.renderingState.visibleLines = visibleLines;
-    return visibleLines;
   }
 
   measureBoundsFor (morph) {
@@ -754,26 +777,6 @@ export default class Stage0Renderer {
     prevParent.appendChild(textNode);
 
     return bounds;
-  }
-
-  updateLineExtents (morph, node) {
-    const prevPar = node.parentNode;
-    const sibling = node.nextSibling;
-    this.placeholder.appendChild(node);
-    let i = 0;
-    const lineNodes = node.querySelectorAll('.line');
-    let line = morph.document.lines[morph.renderingState.startLine];
-    while (i < morph.renderingState.maxVisibleLines && line) {
-      const currLineNode = lineNodes[i];
-      const { width, height } = currLineNode.getBoundingClientRect();
-      line.changeExtent(width, height);
-      line = line.nextLine();
-      i++;
-    }
-    if (prevPar) {
-      if (sibling) prevPar.insertBefore(node, sibling);
-      else prevPar.appendChild(node);
-    }
   }
 
   /**
@@ -904,7 +907,6 @@ export default class Stage0Renderer {
     // extract the slices the selection is comprised of
     while (row <= selection.end.row) {
       line = document.getLine(row);
-      // fixme firstVisibleRow + lastVisibleRow
       if (row < morph.viewState.firstVisibleRow - bufferOffset) { // selected lines before the visible ones
         yOffset += line.height;
         row++;
@@ -1106,13 +1108,82 @@ export default class Stage0Renderer {
       node.appendChild(scrollWrapper);
       scrollWrapper.appendChild(textLayer);
     } else node.appendChild(textLayer);
-
+    this.renderTextAndAttributes(node, morph);
     if (morph.document) {
-      this.updateLineExtents(morph, node);
+      const textLayerNode = node.querySelector('.actual');
+      this.updateExtentsOfLines(textLayerNode, morph);
     }
-
     return node;
     // TODO: submorphs and stuff (see renderMorphFast in text/renderer.js)
+  }
+
+  /**
+   * Renders the debug layer of a TextMorph, which visualizes the bounds computed
+   * by the text layout.
+   * @param {Text} morph - The text morph to visualize the text layout for.
+   * @return {VNode} A virtual dom node representing the debug layer.
+   */
+  renderDebugLayer (morph) {
+    const vs = morph.viewState;
+    const debugHighlights = [];
+    const textWidth = 0;
+    let { heightBefore: rowY, firstVisibleRow, lastVisibleRow, visibleLines } = vs;
+    const { padding, scroll: { x: visibleLeft, y: visibleTop } } = morph;
+    const leftP = padding.left();
+    const rightP = padding.right();
+    const topP = 0;
+    const bottomP = padding.bottom();
+    const debugInfo = this.doc.createElement('div');
+    debugInfo.classList.add('debug-info');
+    debugInfo.style.left = (visibleLeft + leftP) + 'px';
+    debugInfo.style.top = visibleTop + 'px';
+    debugInfo.style.width = (morph.width - rightP) + 'px';
+
+    const visibleRowsSpan = this.doc.createElement('span');
+    visibleRowsSpan.innerHTML = `visible rows: ${firstVisibleRow} - ${lastVisibleRow}`;
+    debugInfo.appendChild(visibleRowsSpan);
+    debugHighlights.push(debugInfo);
+
+    for (let i = 0, row = firstVisibleRow; row < lastVisibleRow; i++, row++) {
+      const line = visibleLines[i];
+      const charBounds = morph.textLayout.lineCharBoundsCache.get(line);
+      const { height } = line;
+
+      const debugLine = this.doc.createElement('div');
+      debugLine.classList.add('debug-line');
+      debugLine.style.left = (visibleLeft + leftP) + 'px';
+      debugLine.style.top = (topP + rowY) + 'px';
+      debugLine.style.width = (morph.width - rightP) + 'px';
+      debugLine.style.height = height + 'px';
+
+      const lineSpan = this.doc.createElement('span');
+      lineSpan.innerHTML = String(row);
+
+      debugLine.appendChild(lineSpan);
+      debugHighlights.push(debugLine);
+
+      if (!charBounds) {
+        rowY = rowY + height;
+        continue;
+      }
+
+      for (let col = 0; col < charBounds.length; col++) {
+        const { x, y, width, height } = charBounds[col];
+        const debugChar = this.doc.createElement('div');
+        debugChar.classList.add('debug-char');
+
+        debugChar.style.left = (leftP + x) + 'px';
+        debugChar.style.top = (topP + rowY + y) + 'px';
+        debugChar.style.width = width + 'px';
+        debugChar.style.height = height + 'px';
+
+        debugHighlights.push(debugChar);
+      }
+
+      rowY = rowY + height;
+    }
+
+    return debugHighlights;
   }
 
   handleScrollLayer (node, morph) {
@@ -1202,8 +1273,8 @@ export default class Stage0Renderer {
   renderMarkerLayer (morph) {
     const {
       markers,
-      textLayout
-      // fixmed viewState: { firstVisibleRow, lastVisibleRow }
+      textLayout,
+      viewState: { firstVisibleRow, lastVisibleRow }
     } = morph;
     const parts = [];
 
@@ -1212,7 +1283,7 @@ export default class Stage0Renderer {
     for (const m of markers) {
       const { style, range: { start, end } } = m;
 
-      // fixme if (end.row < firstVisibleRow || start.row > lastVisibleRow) continue;
+      if (end.row < firstVisibleRow || start.row > lastVisibleRow) continue;
 
       // single line
       if (start.row === end.row) {
@@ -1241,6 +1312,103 @@ export default class Stage0Renderer {
     const nodeToAppendTo = morph.readOnly ? node : node.querySelectorAll('.scrollWrapper')[0];
     nodeToAppendTo.append(...this.renderMarkerLayer(morph));
     morph.renderingState.markers = morph.markers; // not yet working
+  }
+
+  // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+  // TEXTRENDERING - MEASURING AFTER RENDER
+  // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+  updateLineHeightOfNode (morph, docLine, lineNode) {
+    if (docLine.height === 0 || docLine.hasEstimatedExtent) {
+      const tfm = morph.getGlobalTransform().inverse();
+      tfm.e = tfm.f = 0;
+
+      const needsTransformAdjustment = tfm.getScale() != 1 || tfm.getRotation() != 0;
+      if (needsTransformAdjustment) lineNode.style.transform = tfm.toString();
+      const { height: nodeHeight, width: nodeWidth } = lineNode.getBoundingClientRect();
+      if (needsTransformAdjustment) lineNode.style.transform = '';
+
+      if (nodeHeight && nodeWidth && (docLine.height !== nodeHeight || docLine.width !== nodeWidth) &&
+         morph.fontMetric.isFontSupported(morph.fontFamily, morph.fontWeight)) {
+        // console.log(`[${docLine.row}] ${nodeHeight} vs ${docLine.height}`)
+        docLine.changeExtent(nodeWidth, nodeHeight, false);
+        morph.textLayout.resetLineCharBoundsCacheOfLine(docLine);
+        // force re-render in case text layout / line heights changed
+        // todo: use new flags
+        this.needsRerender = true;
+        morph.viewState._needsFit = true;
+      }
+
+      // positions embedded morphAß
+      if (docLine.textAndAttributes && docLine.textAndAttributes.length) {
+        let inlineMorph;
+        for (let j = 0, column = 0; j < docLine.textAndAttributes.length; j += 2) {
+          inlineMorph = docLine.textAndAttributes[j];
+          if (inlineMorph && inlineMorph.isMorph) {
+            morph._positioningSubmorph = inlineMorph;
+            inlineMorph.position = morph.textLayout.pixelPositionFor(morph, { row: docLine.row, column }).subPt(morph.origin);
+            inlineMorph._dirty = false; // no need to rerender
+            morph._positioningSubmorph = null;
+            column++;
+          } else if (inlineMorph) {
+            column += inlineMorph.length;
+          }
+        }
+      }
+
+      return nodeHeight;
+    }
+    return docLine.height;
+  }
+
+  updateExtentsOfLines (textlayerNode, morph) {
+    // figure out what lines are displayed in the text layer node and map those
+    // back to document lines.  Those are then updated via lineNode.getBoundingClientRect
+    const { textLayout, viewState, fontMetric } = morph;
+
+    viewState.dom_nodes = [];
+    viewState.dom_nodeFirstRow = 0;
+    viewState.textWidth = textlayerNode.scrollWidth;
+
+    const lineNodes = textlayerNode.children;
+    let i = 0;
+    let firstLineNode;
+
+    while (i < lineNodes.length && lineNodes[i].className != 'line') i++;
+
+    if (i < lineNodes.length) {
+      firstLineNode = lineNodes[i];
+    } else {
+      return;
+    }
+
+    const ds = firstLineNode.dataset;
+    const row = Number(ds ? ds.row : firstLineNode.getAttribute('data-row'));
+    if (typeof row !== 'number' || isNaN(row)) return;
+
+    viewState.dom_nodeFirstRow = row;
+    let actualTextHeight = 0;
+    let line = morph.document.getLine(row);
+
+    let foundEstimatedLine;
+    for (; i < lineNodes.length; i++) {
+      const node = lineNodes[i];
+      viewState.dom_nodes.push(node);
+      if (line) {
+        if (!foundEstimatedLine) { foundEstimatedLine = line.hasEstimatedExtent; }
+        line.hasEstimatedExtent = foundEstimatedLine;
+        actualTextHeight = actualTextHeight + this.updateLineHeightOfNode(morph, line, node);
+        // if we measured but the font as not been loaded, this is also just an estimate
+        line.hasEstimatedExtent = !fontMetric.isFontSupported(morph.fontFamily, morph.fontWeight);
+        line = line.nextLine();
+      }
+    }
+
+    // TODO: use new flags?
+    if (this.needsRerender) {
+      morph.fitIfNeeded();
+      morph.makeDirty();
+    } else morph._dirty = !!morph.submorphs.find(m => m.needsRerender());
   }
 
   // -=-=-=-=-=-=-=-=-=-
