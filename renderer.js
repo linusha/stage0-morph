@@ -506,11 +506,19 @@ export default class Stage0Renderer {
     return node;
   }
 
+  updateDebugLayer (node, morph) {
+    const textNode = node.querySelector('.actual');
+    textNode.querySelectorAll('.debug-line, .debug-char, .debug-info').forEach(n => n.remove());
+    if (morph.debug) textNode.append(...this.renderDebugLayer(morph));
+  }
+
   renderTextAndAttributes (node, morph) {
     const textNode = node.querySelector('.actual');
     if (morph.readOnly) textNode.replaceChildren(...this.renderAllLines(morph));
     else {
-      const linesToRender = this.collectVisibleLinesForRendering(morph);
+      textNode.querySelectorAll('.debug-line, .debug-char, .debug-info').forEach(n => n.remove());
+      const linesToRender = this.collectVisibleLinesForRendering(morph, node);
+      morph.viewState.visibleLines = linesToRender;
       keyed('row',
         textNode,
         morph.renderingState.renderedLines,

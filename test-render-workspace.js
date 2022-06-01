@@ -11,14 +11,14 @@ stage0m.openInWorld()
 
 
 let fullSmartText = new SmartText({textAndAttributes: ['Helloo Robin\n', null, 
-                                   'new line\n',null,
-                                   'new line\n',null,
-                                   'new line\n',null,
-                                   'new line\n',null,
-                                   'new line\n',null,
-                                   'new line\n',null,
-                                   'new line\n',null,
-                                   'new line',null,
+                                   'new line1\n',null,
+                                   'new line2\n',null,
+                                   'new line3\n',null,
+                                   'new line4\n',null,
+                                   'new line5\n',null,
+                                   'new line6\n',null,
+                                   'new line7\n',null,
+                                   'new line8',null,
                                   ], name: 'test',
                                   fixedHeight: true,
                                   height: 80,
@@ -26,12 +26,16 @@ let fullSmartText = new SmartText({textAndAttributes: ['Helloo Robin\n', null,
                                   width: 300,
                                   readOnly: false,
                                   clipMode: 'auto',
+                                  fontFamily: 'Monaco',
+                                  fontSize: 20,
+                                  fontWeigth: 'bold',
+                                  debug: true
                                   })
 fullSmartText.readOnly = false;
 fullSmartText.readOnly = true;
-
+fullSmartText.debug = true
 stage0m.addMorph(fullSmartText)
-fullSmartText.scroll = pt(0,30)
+fullSmartText.scroll = pt(0,50)
 fullSmartText.fit()
 fullSmartText.extent
 
