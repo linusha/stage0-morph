@@ -431,46 +431,28 @@ export default class Stage0Renderer {
     return () => this.textLayerNodeFor(morph);
   }
 
-  textLayerNodeFor (morph) {
+  styleObjectForTextLayerNodeOf (morph) {
     const {
-      height,
       padding: { x: padLeft, y: padTop, width: padWidth, height: padHeight },
-      lineWrapping,
-      fixedWidth,
-      fixedHeight,
-      backgroundColor,
+      fontStyle,
+      fontWeight,
+      fontFamily,
       fontColor,
       textAlign,
       fontSize,
       textDecoration,
-      fontStyle,
-      fontWeight,
-      fontFamily,
+      backgroundColor,
       lineHeight,
       wordSpacing,
       letterSpacing,
-      tabWidth,
-      selectionMode
+      tabWidth
     } = morph;
-    const style = { overflow: 'hidden', top: '0px', left: '0px' };
+
     const padRight = padLeft + padWidth;
     const padBottom = padTop + padHeight;
-    let textLayerClasses = 'newtext-text-layer actual';
 
-    switch (fixedWidth && lineWrapping) {
-      case true:
-      case 'by-words': textLayerClasses = textLayerClasses + ' wrap-by-words'; break;
-      case 'only-by-words': textLayerClasses = textLayerClasses + ' only-wrap-by-words'; break;
-      case 'by-chars': textLayerClasses = textLayerClasses + ' wrap-by-chars'; break;
-      case false: textLayerClasses = textLayerClasses + ' no-wrapping'; break;
-    }
+    const style = { overflow: 'hidden', top: '0px', left: '0px' };
 
-    // TODO: we want to support right and left align also for morpht that have a non-fixed widht and or height
-    if (!fixedWidth) textLayerClasses = textLayerClasses + ' auto-width';
-    if (!fixedHeight) textLayerClasses = textLayerClasses + ' auto-height';
-    if (selectionMode === 'native') textLayerClasses = textLayerClasses + ' selectable';
-    // const textAttrs = { className: textLayerClasses, style };
-    // if (fixedHeight) style.height = textHeight + 'px';
     if (padLeft > 0) style.paddingLeft = padLeft + 'px';
     if (padRight > 0) style.paddingRight = padRight + 'px';
     if (padTop > 0) style.marginTop = padTop + 'px';
@@ -488,8 +470,36 @@ export default class Stage0Renderer {
     if (backgroundColor) style.backgroundColor = backgroundColor;
     if (tabWidth !== 8) style.tabSize = tabWidth;
 
+    return style;
+  }
+
+  textLayerNodeFor (morph) {
+    const {
+      lineWrapping,
+      fixedWidth,
+      fixedHeight,
+      selectionMode
+    } = morph;
+
+    let textLayerClasses = 'newtext-text-layer actual';
+
+    switch (fixedWidth && lineWrapping) {
+      case true:
+      case 'by-words': textLayerClasses = textLayerClasses + ' wrap-by-words'; break;
+      case 'only-by-words': textLayerClasses = textLayerClasses + ' only-wrap-by-words'; break;
+      case 'by-chars': textLayerClasses = textLayerClasses + ' wrap-by-chars'; break;
+      case false: textLayerClasses = textLayerClasses + ' no-wrapping'; break;
+    }
+
+    // TODO: we want to support right and left align also for morpht that have a non-fixed widht and or height
+    if (!fixedWidth) textLayerClasses = textLayerClasses + ' auto-width';
+    if (!fixedHeight) textLayerClasses = textLayerClasses + ' auto-height';
+    if (selectionMode === 'native') textLayerClasses = textLayerClasses + ' selectable';
+
     const node = this.doc.createElement('div');
+    const style = this.styleObjectForTextLayerNodeOf(morph);
     stylepropsToNode(style, node);
+    morph.renderingState.nodeStyleProps = style;
     node.className = textLayerClasses;
 
     return node;
