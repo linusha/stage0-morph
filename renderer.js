@@ -532,7 +532,6 @@ export default class Stage0Renderer {
       let i = 0; // the first child is always the filler, we can skip it
       for (const line of morph.renderingState.renderedLines) {
         i++;
-        this.nodeFor;
         if (!line.needsRerender) continue;
         const oldLineNode = textNode.children[i];
         const newLineNode = this.nodeForLine(line, morph);
@@ -570,7 +569,7 @@ export default class Stage0Renderer {
   nodeForLine (lineObject, morph) {
     const line = lineObject.isLine ? lineObject.textAndAttributes : lineObject;
     if (lineObject.isLine) {
-      lineObject.needsRerender = false;
+      // lineObject.needsRerender = false;
     }
     const renderedChunks = [];
 
