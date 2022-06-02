@@ -1,4 +1,4 @@
-import { applyAttributesToNode, applyStylingToNode } from './helpers.js';
+import { applyAttributesToNode, stylepropsToNode, applyStylingToNode } from './helpers.js';
 import { withoutAll } from 'lively.lang/array.js';
 import { arr, num, obj } from 'lively.lang';
 import { getSvgVertices } from 'lively.morphic/rendering/property-dom-mapping.js';
@@ -488,19 +488,8 @@ export default class Stage0Renderer {
     if (backgroundColor) style.backgroundColor = backgroundColor;
     if (tabWidth !== 8) style.tabSize = tabWidth;
 
-    // if (additionalStyle) {
-    //   const { clipMode, height, width } = additionalStyle;
-    //   if (typeof width === 'number') { style.width = width + 'px'; }
-    //   if (typeof height === 'number') { style.height = height + 'px'; }
-    //   if (clipMode) { style.overflow = clipMode; }
-    // }
-
     const node = this.doc.createElement('div');
-    for (let prop in style) {
-      let name = prop.replace(/([A-Z])/g, '-$1'); // this is more of a hack and is probably already implemented somewhere else as well
-      name = name.toLowerCase();
-      node.style.setProperty(name, style[prop]);
-    }
+    stylepropsToNode(style, node);
     node.className = textLayerClasses;
 
     return node;
@@ -641,11 +630,7 @@ export default class Stage0Renderer {
 
       const chunkNode = this.doc.createElement(tagname);
       chunkNode.textContent = content;
-      for (let prop in nodeStyle) {
-        let name = prop.replace(/([A-Z])/g, '-$1'); // this is more of a hack and is probably already implemented somewhere else as well
-        name = name.toLowerCase();
-        chunkNode.style.setProperty(name, nodeStyle[prop]);
-      }
+      stylepropsToNode(nodeStyle, chunkNode);
       renderedChunks.push(chunkNode);
     }
 

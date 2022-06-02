@@ -8,11 +8,18 @@ export function applyStylingToNode (morph, node) {
     styleProps = morph.renderStyles(styleProps);
   }
 
+  stylepropsToNode(styleProps, node);
+  return node;
+}
+
+export function stylepropsToNode (styleProps, node) {
   for (let prop in styleProps) {
-    let name = prop.replace(/([A-Z])/g, '-$1'); // this is more of a hack and is probably already implemented somewhere else as well
+    // fixme: this is more of a hack and is probably already implemented somewhere else as well
+    let name = prop.replace(/([A-Z])/g, '-$1');
     name = name.toLowerCase();
     node.style.setProperty(name, styleProps[prop]);
   }
+  return node;
 }
 
 /**
