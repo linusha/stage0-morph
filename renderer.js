@@ -563,10 +563,9 @@ export default class Stage0Renderer {
     const renderedChunks = [];
 
     let content, attr,
-      fontSize, fontFamily, fontWeight, fontStyle, textDecoration, fontColor,
-      backgroundColor, nativeCursor, textStyleClasses, link;
+      fontSize, nativeCursor, textStyleClasses, link;
     let tagname; let nodeStyle; let nodeAttrs; let paddingRight; let paddingLeft; let paddingTop; let paddingBottom;
-    let lineHeight; let textAlign; let verticalAlign; let wordSpacing; let letterSpacing; let quote;
+    let lineHeight; let textAlign; let wordSpacing; let letterSpacing; let quote;
     let textStroke;
     let minFontSize = morph.fontSize;
 
@@ -656,14 +655,6 @@ export default class Stage0Renderer {
   }
 
   renderAllLines (morph) {
-    const {
-      height,
-      scroll,
-      padding: { x: padLeft, y: padTop, width: padWidth, height: padHeight },
-      clipMode,
-      textAndAttributes
-    } = morph;
-
     const renderedLines = [];
     if (!morph.document) {
     // when we have no doc, text and attributes are split into lines
@@ -679,12 +670,10 @@ export default class Stage0Renderer {
     const {
       height,
       scroll,
-      padding: { x: padLeft, y: padTop, width: padWidth, height: padHeight },
       document: doc,
-      clipMode
+      clipMode,
+      padding: { y: padTop }
     } = morph;
-    const padRight = padLeft + padWidth;
-    const padBottom = padTop + padHeight;
     const scrollTop = scroll.y;
     const scrollHeight = height;
     const lastLineNo = doc.rowCount - 1;
@@ -862,7 +851,7 @@ export default class Stage0Renderer {
     const { textLayout } = morph;
 
     const { start, end, cursorVisible, selectionColor } = selection;
-    const { document, cursorColor, fontColor } = morph;
+    const { document, cursorColor } = morph;
     const isReverse = selection.isReverse();
 
     const startBounds = textLayout.boundsFor(morph, start);
@@ -879,9 +868,6 @@ export default class Stage0Renderer {
 
     if (obj.equals(selection.start, selection.end)) return [renderedCursor];
 
-    const maxBounds = textLayout.computeMaxBoundsForLineSelection(morph, selection);
-    const startPos = pt(startBounds.x, maxBounds.y);
-
     // render selection layer
     const slices = [];
     let row = selection.start.row;
@@ -893,7 +879,6 @@ export default class Stage0Renderer {
       selectionTopLeft,
       selectionBottomRight,
       isFirstLine,
-      renderedSelectionPart,
       cb, line, isWrapped;
 
     // extract the slices the selection is comprised of
@@ -909,7 +894,7 @@ export default class Stage0Renderer {
 
       // selected lines (rows) that are visible
       charBounds = textLayout.charBoundsOfRow(morph, row).map(Rectangle.fromLiteral);
-      isFirstLine = row == selection.start.row;
+      isFirstLine = row === selection.start.row;
       isWrapped = charBounds[0].bottom() < arr.last(charBounds).top();
 
       if (isWrapped) {
@@ -940,7 +925,7 @@ export default class Stage0Renderer {
           slices.push(Rectangle.fromAny(selectionTopLeft, selectionBottomRight));
         }
       } else {
-        const isLastLine = row == selection.end.row;
+        const isLastLine = row === selection.end.row;
         const startIdx = isFirstLine ? selection.start.column : 0;
         const endIdx = isLastLine ? selection.end.column : charBounds.length - 1;
         const lineMinY = isFirstLine && arr.min(charBounds.slice(startIdx, endIdx + 1).map(cb => cb.top())) || 0;
@@ -1083,8 +1068,7 @@ export default class Stage0Renderer {
       Since for non-interactive text all lines are rendered once, this trick in not needed.
     */
     if (!morph.readOnly) {
-      if (morph.document) // fixme hack
-      {
+      if (morph.document) { // fixme hack
         scrollLayerNode = this.renderScrollLayer(morph);
         node.appendChild(scrollLayerNode);
       }
@@ -1118,13 +1102,11 @@ export default class Stage0Renderer {
   renderDebugLayer (morph) {
     const vs = morph.viewState;
     const debugHighlights = [];
-    const textWidth = 0;
     let { heightBefore: rowY, firstVisibleRow, lastVisibleRow, visibleLines } = vs;
     const { padding, scroll: { x: visibleLeft, y: visibleTop } } = morph;
     const leftP = padding.left();
     const rightP = padding.right();
     const topP = 0;
-    const bottomP = padding.bottom();
     const debugInfo = this.doc.createElement('div');
     debugInfo.classList.add('debug-info');
     debugInfo.style.left = (visibleLeft + leftP) + 'px';
@@ -1265,7 +1247,6 @@ export default class Stage0Renderer {
   renderMarkerLayer (morph) {
     const {
       markers,
-      textLayout,
       viewState: { firstVisibleRow, lastVisibleRow }
     } = morph;
     const parts = [];
@@ -1315,7 +1296,7 @@ export default class Stage0Renderer {
       const tfm = morph.getGlobalTransform().inverse();
       tfm.e = tfm.f = 0;
 
-      const needsTransformAdjustment = tfm.getScale() != 1 || tfm.getRotation() != 0;
+      const needsTransformAdjustment = tfm.getScale() !== 1 || tfm.getRotation() !== 0;
       if (needsTransformAdjustment) lineNode.style.transform = tfm.toString();
       const { height: nodeHeight, width: nodeWidth } = lineNode.getBoundingClientRect();
       if (needsTransformAdjustment) lineNode.style.transform = '';
@@ -1356,7 +1337,7 @@ export default class Stage0Renderer {
   updateExtentsOfLines (textlayerNode, morph) {
     // figure out what lines are displayed in the text layer node and map those
     // back to document lines.  Those are then updated via lineNode.getBoundingClientRect
-    const { textLayout, viewState, fontMetric } = morph;
+    const { viewState, fontMetric } = morph;
 
     viewState.dom_nodes = [];
     viewState.dom_nodeFirstRow = 0;
@@ -1366,7 +1347,7 @@ export default class Stage0Renderer {
     let i = 0;
     let firstLineNode;
 
-    while (i < lineNodes.length && lineNodes[i].className != 'line') i++;
+    while (i < lineNodes.length && lineNodes[i].className !== 'line') i++;
 
     if (i < lineNodes.length) {
       firstLineNode = lineNodes[i];

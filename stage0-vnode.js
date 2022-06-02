@@ -1,5 +1,5 @@
 import vdom from 'virtual-dom';
-const { diff, patch, create: createElement } = vdom;
+const { diff, patch } = vdom;
 
 /**
  * Needed to inject a a Morph which is (as well as its submorphs) rendered with Stage0 inside of the default rendering loop with the vdom.
