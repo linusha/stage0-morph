@@ -24,11 +24,14 @@ let fullSmartText = new SmartText({textAndAttributes: ['Helloo Robin\n', null,
                                   height: 80,
                                   fixedWidth: true,
                                   width: 300,
+                                  //lineHeight: 2,
                                   readOnly: false,
                                   clipMode: 'auto',
-                                  fontFamily: 'Monaco',
-                                  fontSize: 20,
-                                  fontWeigth: 'bold',
+                                  //fontFamily: 'Monaco',
+                                  //textAlign: 'center',
+                                  lineWrapping: 'by-words',
+                                  //fontSize: 20,
+                                  //fontWeigth: 'bold',
                                   debug: true
                                   })
 fullSmartText.readOnly = false;

@@ -441,13 +441,8 @@ export default class Stage0Renderer {
 
     let textLayerClasses = 'newtext-text-layer actual';
 
-    switch (fixedWidth && lineWrapping) {
-      case true:
-      case 'by-words': textLayerClasses = textLayerClasses + ' wrap-by-words'; break;
-      case 'only-by-words': textLayerClasses = textLayerClasses + ' only-wrap-by-words'; break;
-      case 'by-chars': textLayerClasses = textLayerClasses + ' wrap-by-chars'; break;
-      case false: textLayerClasses = textLayerClasses + ' no-wrapping'; break;
-    }
+    // TODO: we want to support right and left align also for morpht that have a non-fixed widht and or height
+    textLayerClasses = textLayerClasses + ' ' + (fixedWidth ? this.lineWrappingToClass(lineWrapping) : this.lineWrappingToClass(false));
 
     // TODO: we want to support right and left align also for morpht that have a non-fixed widht and or height
     if (!fixedWidth) textLayerClasses = textLayerClasses + ' auto-width';
@@ -503,6 +498,7 @@ export default class Stage0Renderer {
   }
 
   renderMorphInLine (morph, attr) {
+    // TODO: investigate if this is necessary 
     attr = attr || {};
     const rendered = this.renderMorph(morph);
     rendered.style.position = 'sticky';
@@ -1036,6 +1032,42 @@ export default class Stage0Renderer {
     scrollWrapper.style.transform = `translate(-${morph.scroll.x}px, -${morph.scroll.y}px)`;
     morph.renderingState.scroll = morph.scroll;
     this.renderTextAndAttributes(node, morph);
+  }
+
+  patchTextLayerStyleObject (node, morph, newStyle) {
+    const textLayer = node.querySelector('.actual');
+    const fontMeasureTextLayer = node.querySelector('.font-measure');
+    stylepropsToNode(newStyle, textLayer);
+    stylepropsToNode(newStyle, fontMeasureTextLayer);
+    morph.renderingState.nodeStyleProps = newStyle;
+    morph.invalidateTextLayout(true, false);
+  }
+
+  lineWrappingToClass (lineWrapping) {
+    switch (lineWrapping) {
+      case true:
+      case 'by-words': return 'wrap-by-words';
+      case 'only-by-words': return 'only-wrap-by-words';
+      case 'by-chars': return 'wrap-by-chars';
+    }
+    return 'no-wrapping';
+  }
+
+  patchLineWrapping (node, morph) {
+    const oldWrappingClass = this.lineWrappingToClass(morph.renderingState.lineWrapping);
+    const newWrappingClass = morph.fixedWidth ? this.lineWrappingToClass(morph.lineWrapping) : this.lineWrappingToClass(false);
+
+    const textLayer = node.querySelector('.actual');
+    const fontMeasureTextLayer = node.querySelector('.font-measure');
+
+    textLayer.classList.remove(oldWrappingClass);
+    fontMeasureTextLayer.classList.remove(oldWrappingClass);
+
+    textLayer.classList.add(newWrappingClass);
+    fontMeasureTextLayer.classList.add(newWrappingClass);
+
+    morph.renderingState.lineWrapping = morph.lineWrapping;
+    morph.renderingState.fixedWidth = morph.fixedWidth;
   }
 
   clearTextNodeSubnodesFor (morph) {
