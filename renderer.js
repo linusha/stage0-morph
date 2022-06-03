@@ -567,100 +567,121 @@ export default class Stage0Renderer {
    */
   nodeForLine (lineObject, morph) {
     const line = lineObject.isLine ? lineObject.textAndAttributes : lineObject;
-    if (lineObject.isLine) {
-      // lineObject.needsRerender = false;
-    }
+    const size = line.length;
+
     const renderedChunks = [];
 
-    let content, attr,
-      fontSize, nativeCursor, textStyleClasses, link;
-    let tagname; let nodeStyle; let nodeAttrs; let paddingRight; let paddingLeft; let paddingTop; let paddingBottom;
-    let lineHeight; let textAlign; let wordSpacing; let letterSpacing; let quote;
-    let textStroke;
+    let content, attributes, fontSize, nativeCursor, textStyleClasses, link, tagname, chunkNodeStyle, nodeAttrs, paddingRight, paddingLeft, paddingTop, paddingBottom, lineHeight, textAlign, wordSpacing, letterSpacing, quote, textStroke, fontFamily, fontWeight, textDecoration, fontStyle, fontColor, backgroundColor, verticalAlign, chunkNodeAttributes;
     let minFontSize = morph.fontSize;
 
-    for (let i = 0; i < line.length; i = i + 2) {
-      content = line[i] || '\u00a0';
-      attr = line[i + 1];
+    if (size > 0) {
+      // create chunks per line  
+      for (let i = 0; i < line.length; i = i + 2) {
+        content = line[i] || '\u00a0';
+        attributes = line[i + 1];
 
-      if (typeof content !== 'string') {
-        renderedChunks.push(
-          content.isMorph
-            ? this.renderMorphInLine(content, attr)
-            : objectReplacementChar);
-        continue;
+        if (typeof content !== 'string') {
+          renderedChunks.push(
+            content.isMorph
+            // TODO: how does this work?
+              ? this.renderMorphInLine(content, attributes)
+              : objectReplacementChar);
+          continue;
+        }
+
+        if (!attributes) { renderedChunks.push(content); continue; }
+
+        chunkNodeStyle = {};
+        chunkNodeAttributes = {};
+
+        fontSize = attributes.fontSize && (obj.isString(attributes.fontSize) ? attributes.fontSize : attributes.fontSize + 'px');
+        fontFamily = attributes.fontFamily;
+        fontWeight = attributes.fontWeight;
+        fontStyle = attributes.fontStyle;
+        textDecoration = attributes.textDecoration;
+        fontColor = attributes.fontColor;
+        backgroundColor = attributes.backgroundColor;
+        nativeCursor = attributes.nativeCursor;
+        textStyleClasses = attributes.textStyleClasses;
+        link = attributes.link;
+        lineHeight = attributes.lineHeight || lineHeight;
+        textAlign = attributes.textAlign || textAlign;
+        wordSpacing = attributes.wordSpacing || wordSpacing;
+        letterSpacing = attributes.letterSpacing || letterSpacing;
+        paddingRight = attributes.paddingRight;
+        paddingLeft = attributes.paddingLeft;
+        paddingTop = attributes.paddingTop;
+        paddingBottom = attributes.paddingBottom;
+        verticalAlign = attributes.verticalAlign;
+        textStroke = attributes.textStroke;
+        quote = attributes.quote || quote;
+
+        tagname = 'span';
+
+        if (fontSize && attributes.fontSize < minFontSize) minFontSize = attributes.fontSize;
+
+        if (link) {
+          tagname = 'a';
+          chunkNodeAttributes.href = link;
+          if (link && link.startsWith('http')) chunkNodeAttributes.target = '_blank';
+        }
+
+        if (link || nativeCursor) chunkNodeStyle.pointerEvents = 'auto';
+
+        if (fontSize) chunkNodeStyle.fontSize = fontSize;
+        if (fontFamily) chunkNodeStyle.fontFamily = fontFamily;
+        if (fontWeight) chunkNodeStyle.fontWeight = fontWeight;
+        if (fontStyle) chunkNodeStyle.fontStyle = fontStyle;
+        if (textDecoration) chunkNodeStyle.textDecoration = textDecoration;
+        if (fontColor) chunkNodeStyle.color = String(fontColor);
+        if (backgroundColor) chunkNodeStyle.backgroundColor = String(backgroundColor);
+        if (nativeCursor) chunkNodeStyle.cursor = nativeCursor;
+        if (paddingRight) chunkNodeStyle.paddingRight = paddingRight;
+        if (paddingLeft) chunkNodeStyle.paddingLeft = paddingLeft;
+        if (paddingTop) chunkNodeStyle.paddingTop = paddingTop;
+        if (paddingBottom) chunkNodeStyle.paddingBottom = paddingBottom;
+        if (verticalAlign) chunkNodeStyle.verticalAlign = verticalAlign;
+        if (textStroke) chunkNodeStyle['-webkit-text-stroke'] = textStroke;
+        if (attributes.doit) { chunkNodeStyle.pointerEvents = 'auto'; chunkNodeStyle.cursor = 'pointer'; }
+
+        textStyleClasses = attributes.textStyleClasses;
+        if (textStyleClasses && textStyleClasses.length) { nodeAttrs.className = textStyleClasses.join(' '); }
+
+        const chunkNode = this.doc.createElement(tagname);
+        chunkNode.textContent = content;
+        if (chunkNodeAttributes.href) chunkNode.href = chunkNodeAttributes.href;
+        if (chunkNodeAttributes.target) chunkNode.target = chunkNodeAttributes.target;
+        stylepropsToNode(chunkNodeStyle, chunkNode);
+        renderedChunks.push(chunkNode);
       }
-
-      if (!attr) { renderedChunks.push(content); continue; }
-
-      lineHeight = attr.lineHeight || lineHeight;
-      textAlign = attr.textAlign || textAlign;
-      wordSpacing = attr.wordSpacing || wordSpacing;
-      letterSpacing = attr.letterSpacing || letterSpacing;
-      paddingRight = attr.paddingRight;
-      paddingLeft = attr.paddingLeft;
-      paddingTop = attr.paddingTop;
-      paddingBottom = attr.paddingBottom;
-
-      quote = attr.quote || quote;
-
-      tagname = 'span';
-      nodeStyle = {};
-      nodeAttrs = { style: nodeStyle };
-
-      if (fontSize && attr.fontSize < minFontSize) minFontSize = attr.fontSize;
-
-      if (attr.link) {
-        tagname = 'a';
-        nodeAttrs.href = link;
-        if (link && link.startsWith('http')) nodeAttrs.target = '_blank';
-      }
-
-      if (link || nativeCursor) nodeStyle.pointerEvents = 'auto';
-
-      if (attr.fontSize) nodeStyle.fontSize = attr.fontSize && (obj.isString(attr.fontSize) ? attr.fontSize : attr.fontSize + 'px');
-      if (attr.fontFamily) nodeStyle.fontFamily = attr.fontFamily;
-      if (attr.fontWeight) nodeStyle.fontWeight = attr.fontWeight;
-      if (attr.fontStyle) nodeStyle.fontStyle = attr.fontStyle;
-      if (attr.textDecoration) nodeStyle.textDecoration = attr.textDecoration;
-      if (attr.fontColor) nodeStyle.color = String(attr.fontColor);
-      if (attr.backgroundColor) nodeStyle.backgroundColor = String(attr.backgroundColor);
-      if (attr.nativeCursor) nodeStyle.cursor = attr.nativeCursor;
-      if (paddingRight) nodeStyle.paddingRight = paddingRight;
-      if (paddingLeft) nodeStyle.paddingLeft = paddingLeft;
-      if (paddingTop) nodeStyle.paddingTop = paddingTop;
-      if (paddingBottom) nodeStyle.paddingBottom = paddingBottom;
-      if (attr.verticalAlign) nodeStyle.verticalAlign = attr.verticalAlign;
-      if (textStroke) nodeStyle['-webkit-text-stroke'] = attr.textStroke;
-      if (attr.doit) { nodeStyle.pointerEvents = 'auto'; nodeStyle.cursor = 'pointer'; }
-
-      textStyleClasses = attr.textStyleClasses;
-      if (textStyleClasses && textStyleClasses.length) { nodeAttrs.className = textStyleClasses.join(' '); }
-
-      const chunkNode = this.doc.createElement(tagname);
-      chunkNode.textContent = content;
-      stylepropsToNode(nodeStyle, chunkNode);
-      renderedChunks.push(chunkNode);
-    }
+    } else renderedChunks.push(this.doc.createElement('br'));
 
     const lineStyle = {};
 
-    // if (morph.fontSize > minFontSize) lineStyle.fontSize = minFontSize + 'px';
+    if (morph.fontSize > minFontSize) lineStyle.fontSize = minFontSize + 'px';
     if (lineHeight) lineStyle.lineHeight = lineHeight;
     if (textAlign) lineStyle.textAlign = textAlign;
     if (letterSpacing) lineStyle.letterSpacing = letterSpacing + 'px';
     if (wordSpacing) lineStyle.wordSpacing = wordSpacing + 'px';
     let node = this.doc.createElement('div');
     node.className = 'line';
-    node.append(...renderedChunks);
-    node.append(this.doc.createElement('br'));
-    // if (quote) {
-    //   if (typeof quote !== 'number') quote = 1;
-    //   for (let i = quote; i--;) node = h('blockquote', {}, node);
-    // }
     if (lineObject.isLine) {
       node.dataset.row = lineObject.row;
     }
+    stylepropsToNode(lineStyle, node);
+    node.append(...renderedChunks);
+
+    // node.append(this.doc.createElement('br'));
+
+    if (quote) {
+      if (typeof quote !== 'number') quote = 1;
+      for (let i = quote; i--;) {
+        const quoteNode = this.doc.createElement('blockquote');
+        quoteNode.append(node);
+        node = quoteNode;
+      }
+    }
+
     return node;
   }
 
