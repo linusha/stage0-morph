@@ -431,48 +431,6 @@ export default class Stage0Renderer {
     return () => this.textLayerNodeFor(morph);
   }
 
-  styleObjectForTextLayerNodeOf (morph) {
-    const {
-      padding: { x: padLeft, y: padTop, width: padWidth, height: padHeight },
-      fontStyle,
-      fontWeight,
-      fontFamily,
-      fontColor,
-      textAlign,
-      fontSize,
-      textDecoration,
-      backgroundColor,
-      lineHeight,
-      wordSpacing,
-      letterSpacing,
-      tabWidth
-    } = morph;
-
-    const padRight = padLeft + padWidth;
-    const padBottom = padTop + padHeight;
-
-    const style = { overflow: 'hidden', top: '0px', left: '0px' };
-
-    if (padLeft > 0) style.paddingLeft = padLeft + 'px';
-    if (padRight > 0) style.paddingRight = padRight + 'px';
-    if (padTop > 0) style.marginTop = padTop + 'px';
-    if (padBottom > 0) style.marginBottom = padBottom + 'px';
-    if (letterSpacing) style.letterSpacing = letterSpacing + 'px';
-    if (wordSpacing) style.wordSpacing = wordSpacing + 'px';
-    if (lineHeight) style.lineHeight = lineHeight;
-    if (fontFamily) style.fontFamily = fontFamily;
-    if (fontWeight) style.fontWeight = fontWeight;
-    if (fontStyle) style.fontStyle = fontStyle;
-    if (textDecoration) style.textDecoration = textDecoration;
-    if (fontSize) style.fontSize = fontSize + 'px';
-    if (textAlign) style.textAlign = textAlign;
-    if (fontColor) style.color = String(fontColor);
-    if (backgroundColor) style.backgroundColor = backgroundColor;
-    if (tabWidth !== 8) style.tabSize = tabWidth;
-
-    return style;
-  }
-
   textLayerNodeFor (morph) {
     const {
       lineWrapping,
@@ -497,7 +455,7 @@ export default class Stage0Renderer {
     if (selectionMode === 'native') textLayerClasses = textLayerClasses + ' selectable';
 
     const node = this.doc.createElement('div');
-    const style = this.styleObjectForTextLayerNodeOf(morph);
+    const style = morph.styleObject();
     stylepropsToNode(style, node);
     morph.renderingState.nodeStyleProps = style;
     node.className = textLayerClasses;
@@ -1076,6 +1034,7 @@ export default class Stage0Renderer {
     const scrollWrapper = node.querySelectorAll('.scrollWrapper')[0];
     if (!scrollWrapper) return;
     scrollWrapper.style.transform = `translate(-${morph.scroll.x}px, -${morph.scroll.y}px)`;
+    morph.renderingState.scroll = morph.scroll;
     this.renderTextAndAttributes(node, morph);
   }
 
@@ -1269,6 +1228,8 @@ export default class Stage0Renderer {
 
     if (scrollActive) scrollLayer.style.overflow = morph.clipMode;
     else scrollLayer.style.overflow = 'hidden';
+
+    morph.renderingState.scrollActive = morph.scrollActive;
   }
 
   /**
