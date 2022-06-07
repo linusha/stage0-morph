@@ -8,6 +8,7 @@ import { Rectangle, pt } from 'lively.graphics';
 import { objectReplacementChar } from 'lively.morphic/text/document.js';
 
 import { keyed, noOpUpdate } from './keyed.js';
+import { StatusMessageError } from 'lively.halos/components/messages.cp.js';
 
 const svgNs = 'http://www.w3.org/2000/svg';
 
@@ -146,12 +147,14 @@ export default class Stage0Renderer {
   installWrapperNodeFor (morph, node, fixChildNodes = false) {
     const wrapperNode = this.submorphWrapperNodeFor(morph);
     if (morph.isPolygon) this.renderPolygonClipMode(morph, wrapperNode);
-    const children = Array.from(node.children);
 
-    const wrapped = children.some(c => c.getAttribute('id') && c.getAttribute('id').includes('submorphs'));
+    const wrapped = node.querySelector(`#submorphs-${morph.id}`);
     if (!wrapped) {
-      if (!morph.isPath) node.appendChild(wrapperNode);
-      else node.insertBefore(wrapperNode, node.lastChild);
+      if (morph.isSmartText) {
+        const scrollWrapper = node.querySelector('.scrollWrapper');
+        scrollWrapper.appendChild(wrapperNode);
+      } else if (!morph.isPath) node.appendChild(wrapperNode); // normal morphs
+      else node.insertBefore(wrapperNode, node.lastChild); // path
       if (fixChildNodes) {
         const childNodes = Array.from(node.childNodes);
         if (morph.isPath) { childNodes.shift(); childNodes.pop(); } else if (morph.isImage || morph.isCanvas || morph.isHTMLMorph) childNodes.shift();
@@ -229,6 +232,13 @@ export default class Stage0Renderer {
         node.childNodes.forEach(n => {
           if (n.tagName !== 'svg') n.remove();
         });
+      } else if (morph.isSmartText) {
+        const scrollWrapper = node.querySelector('.scrollWrapper');
+        // we need to keep markers, selections, syntax errors etc. around
+        scrollWrapper.childNodes.forEach(n => {
+          if (!n.className) n.remove();
+          if (n.classList.contains('morph')) n.remove();
+        });
       } else {
         node.replaceChildren();
       }
@@ -262,25 +272,40 @@ export default class Stage0Renderer {
           item => this.renderMorph(item)
         );
       }
-    } else // morph is not path
-    if (skipWrapping) {
-      const beforeElem = node.firstChild;
-      keyed('id',
-        node,
-        alreadyRenderedSubmorphs,
-        submorphsToRender,
-        item => this.renderMorph(item),
-        noOpUpdate,
-        this.isComposite(morph) ? beforeElem : null// before list
-      );
-    } else {
-      this.installWrapperNodeFor(morph, node);
-      keyed('id',
-        node.lastChild,
-        alreadyRenderedSubmorphs,
-        submorphsToRender,
-        item => this.renderMorph(item)
-      );
+    } else if (morph.isSmartText) {
+      if (skipWrapping) {
+        // TODO: talk about this from a conceptual point of view with robin
+        // TODO: this is not enough to enforce that the problematic aspect of this (i.e. adding a layout ONTO a text morph) does not occur 
+        $world.setStatusMessage('Not supported for SmartText', StatusMessageError);
+      } else {
+        this.installWrapperNodeFor(morph, node);
+        keyed('id',
+          node.querySelector(`#submorphs-${morph.id}`),
+          alreadyRenderedSubmorphs,
+          submorphsToRender,
+          item => this.renderMorph(item)
+        );
+      }
+    } else { // morph is not path
+      if (skipWrapping) {
+        const beforeElem = node.firstChild;
+        keyed('id',
+          node,
+          alreadyRenderedSubmorphs,
+          submorphsToRender,
+          item => this.renderMorph(item),
+          noOpUpdate,
+          this.isComposite(morph) ? beforeElem : null// before list
+        );
+      } else {
+        this.installWrapperNodeFor(morph, node);
+        keyed('id',
+          node.lastChild,
+          alreadyRenderedSubmorphs,
+          submorphsToRender,
+          item => this.renderMorph(item)
+        );
+      }
     }
 
     // When a node get removed/added to the DOM its scollTop/scrollLeft values are reset.
