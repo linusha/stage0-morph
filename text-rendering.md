@@ -86,7 +86,11 @@ Currently, a Morph inside of `Text` can be in three modes:
 
 1. Just be a submorph, floating above the text and not caring.
 2. Being **embedded** in the text, i.e. being treated as just another character, letting the line become larger.
-3. Being **in displacing mode**, with text floating around it. 
+3. Being **in displacing mode**, with text floating around it.
+
+Morphs in *displacing mode* are morphs in floating mode at a position that are then supplemented by inserting a bunch of small "invisible" morphs inside of the text that together make up the shape of the displacing morph.
+The CSS solution for this (`shape-outside`) does not easily work, since our lines are not inline elements.
+However, text displacement is not working in the current implementation as well. When it gets fixed, we should investigate again if we can make it work this way. This would probably also involve some sort of change to the layout calculations and measurements.
 
 In theory, 2 and 3 can be toggled with `toggleTextWrappingAround` on `Text`. This method is broken, due to changes to the graphics system.
 
