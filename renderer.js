@@ -226,12 +226,14 @@ export default class Stage0Renderer {
     // Invariant: Morph has been rendered previously.
     const node = this.getNodeForMorph(morph);
 
-    const submorphsToRender = morph.submorphs;
+    let submorphsToRender = morph.submorphs;
+    // these embedded morphs are not really submorphs, but only for a really short time
+    submorphsToRender = submorphsToRender.filter(sm => !sm._isInline);
 
     // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
     // Optimization for when a morph has no longer any submorphs.
     // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-    if (morph.submorphs.length === 0) {
+    if (morph.submorphs.filter(sm => !sm._isInline).length === 0) {
       if (morph.isPath) {
         // two SVG nodes are necessary
         // remove everything else, in the case that we have unwrapped submorph nodes
