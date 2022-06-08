@@ -80,7 +80,11 @@ export default class Stage0Renderer {
 
     for (let morph of morphsToHandle) {
       if (morph.renderingState.hasStructuralChanges) this.morphsWithStructuralChanges.push(morph);
-      if (morph.renderingState.needsRerender) this.renderedMorphsWithChanges.push(morph);
+      // For inline morphs, trigger updating of line
+      if (morph.renderingState.needsRerender && morph._isInline) {
+        this.renderedMorphsWithChanges.push(morph.ownerChain().find(m => m.isSmartText));
+      }
+      if (morph.renderingState.needsRerender && !morph._isInline) this.renderedMorphsWithChanges.push(morph);
       if (morph.renderingState.animationAdded) this.renderedMorphsWithAnimations.push(morph);
     }
 
@@ -520,6 +524,10 @@ export default class Stage0Renderer {
     if (morph.document) {
       this.updateExtentsOfLines(textNode, morph);
     }
+
+    morph.textAndAttributes.forEach(ta => {
+      if (ta && ta.isMorph && ta.renderingState.needsRerender) ta.renderingState.needsRerender = false;
+    });
     morph.renderingState.renderedTextAndAttributes = morph.textAndAttributes;
   }
 
@@ -538,6 +546,7 @@ export default class Stage0Renderer {
     if (attr.paddingLeft) rendered.style.marginLeft = attr.paddingLeft;
     if (attr.paddingRight) rendered.style.marginRight = attr.paddingRight;
     if (attr.paddingBottom) rendered.style.marginBottom = attr.paddingBottom;
+    morph.needsRerender = false;
     return rendered;
   }
 
