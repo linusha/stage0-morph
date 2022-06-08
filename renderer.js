@@ -113,9 +113,11 @@ export default class Stage0Renderer {
   renderMorph (morph, force) {
     let node;
     node = this.renderMap.get(morph);
-    if (force || !node) {
+    if (force || morph._isInline || !node) {
       node = morph.getNodeForRenderer(this); // returns a DOM node as specified by the morph
-      this.renderMap.set(morph, node);
+      // inline morphs will be rendered again inside of the font metric
+      // ignore the morph map here in order to not mess the actually rendered node up
+      if (!morph._isInline) this.renderMap.set(morph, node);
     }
 
     applyAttributesToNode(morph, node);
@@ -515,7 +517,6 @@ export default class Stage0Renderer {
         textNode.replaceChild(newLineNode, oldLineNode);
       }
     }
-
     if (morph.document) {
       this.updateExtentsOfLines(textNode, morph);
     }
@@ -1361,7 +1362,7 @@ export default class Stage0Renderer {
         morph.viewState._needsFit = true;
       }
 
-      // positions embedded morphAß
+      // positions embedded morphs
       if (docLine.textAndAttributes && docLine.textAndAttributes.length) {
         let inlineMorph;
         for (let j = 0, column = 0; j < docLine.textAndAttributes.length; j += 2) {

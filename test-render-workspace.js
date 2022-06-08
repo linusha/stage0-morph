@@ -36,7 +36,7 @@ let fullSmartText = new SmartText({textAndAttributes: ['Helloo Robin\n', null,
                                   })
 fullSmartText.readOnly = false;
 fullSmartText.readOnly = true;
-fullSmartText.debug = true
+
 stage0m.addMorph(fullSmartText)
 fullSmartText.scroll = pt(0,50)
 fullSmartText.fit()
