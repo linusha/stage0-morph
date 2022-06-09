@@ -527,9 +527,14 @@ export default class Stage0Renderer {
       this.updateExtentsOfLines(textNode, morph);
     }
 
+    let inlineMorphUpdated = false;
     morph.textAndAttributes.forEach(ta => {
-      if (ta && ta.isMorph && ta.renderingState.needsRerender) ta.renderingState.needsRerender = false;
+      if (ta && ta.isMorph && ta.renderingState.needsRerender) {
+        ta.renderingState.needsRerender = false;
+        inlineMorphUpdated = true;
+      }
     });
+    if (inlineMorphUpdated) morph.invalidateTextLayout(true, false);
     morph.renderingState.renderedTextAndAttributes = morph.textAndAttributes;
   }
 
