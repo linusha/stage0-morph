@@ -536,6 +536,7 @@ export default class Stage0Renderer {
     });
     if (inlineMorphUpdated) morph.invalidateTextLayout(true, false);
     morph.renderingState.renderedTextAndAttributes = morph.textAndAttributes;
+    morph.renderingState.extent = morph.extent;
   }
 
   renderMorphInLine (morph, attr) {
