@@ -1385,10 +1385,7 @@ export default class Stage0Renderer {
         // console.log(`[${docLine.row}] ${nodeHeight} vs ${docLine.height}`)
         docLine.changeExtent(nodeWidth, nodeHeight, false);
         morph.textLayout.resetLineCharBoundsCacheOfLine(docLine);
-        // force re-render in case text layout / line heights changed
-        // todo: use new flags
-        this.needsRerender = true;
-        morph.viewState._needsFit = true;
+        morph.viewState._needsFit = true; // is this still needed? what did it do?
       }
 
       // positions embedded morphs
@@ -1455,12 +1452,6 @@ export default class Stage0Renderer {
         line = line.nextLine();
       }
     }
-
-    // TODO: use new flags?
-    if (this.needsRerender) {
-      morph.fitIfNeeded();
-      morph.makeDirty();
-    } else morph._dirty = !!morph.submorphs.find(m => m.needsRerender());
   }
 
   // -=-=-=-=-=-=-=-=-=-
