@@ -501,14 +501,14 @@ export default class Stage0Renderer {
     const textNode = node.querySelector('.actual');
     if (morph.readOnly) textNode.replaceChildren(...this.renderAllLines(morph));
     else {
-      textNode.querySelectorAll('.debug-line, .debug-char, .debug-info').forEach(n => n.remove());
+      if (morph.debug) textNode.querySelectorAll('.debug-line, .debug-char, .debug-info').forEach(n => n.remove());
       const linesToRender = this.collectVisibleLinesForRendering(morph, node);
       morph.viewState.visibleLines = linesToRender;
       keyed('row',
         textNode,
         morph.renderingState.renderedLines,
         linesToRender,
-        item => this.nodeForLine(item, morph),
+        item => this.nodeForLine(item, morph, true),
         noOpUpdate,
         textNode.firstChild,
         null
@@ -519,7 +519,7 @@ export default class Stage0Renderer {
         i++;
         if (!line.needsRerender) continue;
         const oldLineNode = textNode.children[i];
-        const newLineNode = this.nodeForLine(line, morph);
+        const newLineNode = this.nodeForLine(line, morph, true);
         textNode.replaceChild(newLineNode, oldLineNode);
       }
     }
@@ -537,6 +537,18 @@ export default class Stage0Renderer {
     if (inlineMorphUpdated) morph.invalidateTextLayout(true, false);
     morph.renderingState.renderedTextAndAttributes = morph.textAndAttributes;
     morph.renderingState.extent = morph.extent;
+  }
+
+  patchLineHeightAndLetterSpacing (node, morph) {
+    node.querySelectorAll('.newtext-text-layer').forEach(node => {
+      if (morph.letterSpacing) node.style.letterSpacing = morph.letterSpacing;
+      else delete node.style.letteSpacing;
+      node.style.lineHeight = morph.lineHeight;
+    });
+    morph.document.lines.forEach(l => l.needsRerender = true);
+    this.renderTextAndAttributes(node, morph);
+    morph.renderingState.lineHeight = morph.lineHeight;
+    morph.renderingState.letterSpacing = morph.letterSpacing;
   }
 
   renderMorphInLine (morph, attr) {
@@ -562,7 +574,7 @@ export default class Stage0Renderer {
    * Renders chunks (1 pair of text and textAttributes) into lines (divs),
    * Thus returns an array of divs that can each contain multiple spans 
    */
-  nodeForLine (lineObject, morph) {
+  nodeForLine (lineObject, morph, isRealRender = false) {
     const line = lineObject.isLine ? lineObject.textAndAttributes : lineObject;
     const size = line.length;
 
@@ -678,7 +690,7 @@ export default class Stage0Renderer {
         node = quoteNode;
       }
     }
-
+    if (lineObject.isLine && isRealRender) { lineObject.needsRerender = false; }
     return node;
   }
 
@@ -687,7 +699,7 @@ export default class Stage0Renderer {
     if (!morph.document) {
     // when we have no doc, text and attributes are split into lines
       for (let i = 0; i < morph.textAndAttributes.length; i++) {
-        const newLine = this.nodeForLine(morph.textAndAttributes[i], morph);
+        const newLine = this.nodeForLine(morph.textAndAttributes[i], morph, true);
         renderedLines.push(newLine);
       }
     }
