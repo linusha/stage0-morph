@@ -20,19 +20,19 @@ let fullSmartText = new SmartText({textAndAttributes: ['Helloo Robin\n', null,
                                    'new line7\n',null,
                                    'new line8',null,
                                   ], name: 'test',
-                                  fixedHeight: true,
-                                  height: 80,
-                                  fixedWidth: true,
-                                  width: 300,
+                                  //fixedHeight: true,
+                                  //height: 80,
+                                  //fixedWidth: true,
+                                  //width: 300,
                                   // lineHeight: 2,
-                                  readOnly: false,
+                                  labelMode: false,
                                   clipMode: 'auto',
                                   //fontFamily: 'Monaco',
                                   //textAlign: 'center',
-                                  lineWrapping: 'by-chars',
+                                  // lineWrapping: 'by-chars',
                                   //fontSize: 20,
                                   //fontWeigth: 'bold',
-                                  debug: true
+                                  // debug: true
                                   })
 fullSmartText.readOnly = false;
 fullSmartText.readOnly = true;

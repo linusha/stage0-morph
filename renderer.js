@@ -355,7 +355,7 @@ export default class Stage0Renderer {
     applyStylingToNode(morph, node);
 
     // fixme: hackz
-    if (morph.isSmartText && !morph.readOnly) node.style.overflow = 'hidden';
+    if (morph.isSmartText && !morph.labelMode) node.style.overflow = 'hidden';
     // TODO: this needs to call the after render hooks later on
     morph.renderingState.needsRerender = false;
   }
@@ -499,7 +499,7 @@ export default class Stage0Renderer {
 
   renderTextAndAttributes (node, morph) {
     const textNode = node.querySelector('.actual');
-    if (morph.readOnly) textNode.replaceChildren(...this.renderAllLines(morph));
+    if (morph.labelMode) textNode.replaceChildren(...this.renderAllLines(morph));
     else {
       if (morph.debug) textNode.querySelectorAll('.debug-line, .debug-char, .debug-info').forEach(n => n.remove());
       const linesToRender = this.collectVisibleLinesForRendering(morph, node);
@@ -1144,7 +1144,7 @@ export default class Stage0Renderer {
       With this trick, the scrollLayer is the node that actually gets scrolled, while we can exchange all line nodes as we like.
       Since for non-interactive text all lines are rendered once, this trick in not needed.
     */
-    if (!morph.readOnly) {
+    if (!morph.labelMode) {
       if (morph.document) { // fixme hack
         scrollLayerNode = this.renderScrollLayer(morph);
         node.appendChild(scrollLayerNode);
@@ -1156,7 +1156,7 @@ export default class Stage0Renderer {
       node.appendChild(textLayerForFontMeasure);
     }
 
-    if (!morph.readOnly && morph.document) { // fixme hack
+    if (!morph.labelMode && morph.document) { // fixme hack
       const scrollWrapper = this.scrollWrapperFor(morph);
       node.appendChild(scrollWrapper);
       scrollWrapper.appendChild(textLayer);
@@ -1262,7 +1262,7 @@ export default class Stage0Renderer {
     if (!node) return; // fixme
     node.querySelectorAll('div.newtext-cursor').forEach(c => c.remove());
     node.querySelectorAll('svg.selection').forEach(s => s.remove());
-    const nodeToAppendTo = morph.readOnly ? node : node.querySelectorAll('.scrollWrapper')[0];
+    const nodeToAppendTo = morph.labelMode ? node : node.querySelectorAll('.scrollWrapper')[0];
     nodeToAppendTo.append(...this.renderSelectionLayer(morph));
     morph.renderingState.selection = morph.selection; // not yet working
   }
@@ -1361,7 +1361,7 @@ export default class Stage0Renderer {
   patchMarkerLayer (node, morph) {
     if (!node) return; // fixme
     node.querySelectorAll('div.newtext-marker-layer').forEach(s => s.remove());
-    const nodeToAppendTo = morph.readOnly ? node : node.querySelectorAll('.scrollWrapper')[0];
+    const nodeToAppendTo = morph.labelMode ? node : node.querySelectorAll('.scrollWrapper')[0];
     nodeToAppendTo.append(...this.renderMarkerLayer(morph));
     morph.renderingState.markers = morph.markers; // not yet working
   }
