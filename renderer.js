@@ -98,10 +98,18 @@ export default class Stage0Renderer {
 
     for (let morph of this.renderedMorphsWithAnimations) {
       const node = this.getNodeForMorph(morph);
+
+      if (morph.isPath) {
+        const svgNode = node.firstChild;
+        morph._animationQueue.startSvgAnimationsFor(svgNode, 'svg');
+        morph._animationQueue.startSvgAnimationsFor(svgNode, 'path');
+      }
+
       morph._animationQueue.startAnimationsFor(node);
       morph.renderingState.animationAdded = false;
     }
-
+    // This is only necessary while we are the "guest-renderer", can be removed once we actually migrate
+    this.owner.makeDirty();
     return this.rootNode;
   }
 
@@ -383,6 +391,7 @@ export default class Stage0Renderer {
   emptyRenderQueues () {
     this.morphsWithStructuralChanges = [];
     this.renderedMorphsWithChanges = [];
+    this.renderedMorphsWithAnimations = [];
   }
 
   getNodeForMorph (morph) {
