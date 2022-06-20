@@ -1,4 +1,4 @@
-import { applyAttributesToNode, stylepropsToNode, applyStylingToNode } from './helpers.js';
+import { applyAttributesToNode, lineWrappingToClass, stylepropsToNode, applyStylingToNode } from './helpers.js';
 import { withoutAll } from 'lively.lang/array.js';
 import { arr, num, obj } from 'lively.lang';
 import { getSvgVertices } from 'lively.morphic/rendering/property-dom-mapping.js';
@@ -158,6 +158,14 @@ export default class Stage0Renderer {
     return node;
   }
 
+  /**
+   * In case the positioning of submorphs is not handled by a CSS layout, the nodes of submorphs are put into a wrapper node in which they 
+   * are positioned absolutely.
+   * This methood hangs such a wrapper node into the node of a morph, taking care of the correct positioning inside of the morph node.
+   * @param {Morph} morph - The morph for which a submorph holding node is to be created.
+   * @param {Node} node - The DOM node of `morph`.
+   * @param {Boolean} fixChildNodes - Whether or not the nodes that are already children of `node` should be moved into the wrapper node. 
+   */
   installWrapperNodeFor (morph, node, fixChildNodes = false) {
     const wrapperNode = this.submorphWrapperNodeFor(morph);
     if (morph.isPolygon) this.renderPolygonClipMode(morph, wrapperNode);
@@ -181,7 +189,10 @@ export default class Stage0Renderer {
   }
 
   /**
-   * Also removes the wrapper Node.
+   * Moves the node of submorphs from the submorph wrapper node (@see installWrapperNodeFor) into the node of its owner morph.
+   * Also removes the wrapper node from the DOM.
+   * Can be used idempotent, aka when the nodes are already children of the owner morph's node, nothing will happen.
+   * This is used for example when a CSS layout gets applied to a morph containing submorphs.
    * @param {Node} node - Node of the morph for which submorphs should get unwrapped.
    */
   unwrapSubmorphNodesIfNecessary (node, morph) {
@@ -205,6 +216,12 @@ export default class Stage0Renderer {
     }
   }
 
+  /**
+   * Gets calles whenever a layouts gets applied/removed from a Morph. A morph can have exactly one layout.
+   * Depending on whether a layout gets applied/removed, we take care of the DOM nodes (move them into/outside of) the wrapper node.
+   * After changing the layout of a morph, all its submorphs need to be rerendered, since their position might have changed. 
+   * @param {Morph} morph - Morph of which the layout property was changed.
+   */
   renderLayoutChange (morph) {
     const node = this.getNodeForMorph(morph);
 
@@ -345,12 +362,19 @@ export default class Stage0Renderer {
     morph.renderingState.hasStructuralChanges = false;
   }
 
+  /**
+   * Some morph types result into more than one node inside of the outer most `div` node.
+   * These return true here in order to take the nodes that will come before nodes of submorphs into account when reconciling the rendered
+   * nodes to render submorphs that have been added/removed.
+   * @param {Morph} morph - The morph for which to check if it results in multiple nodes.
+   */
   isComposite (morph) {
     return morph.isCanvas || morph.isHTMLMorph || morph.isImage || morph.isCheckbox;
   }
 
   /**
    * Assumes that a DOM node for the given morph already exists and changes the attributes of this node according to the current style definition of the morph.
+   * `patchSpecialProps` can be implemented on a given morph to render changes that are not reflected by the (default) set CSS attributes or to manipulate childnodes.
    * @param { Morph } morph - The morph for which to update the rendering.
    */
   renderStylingChanges (morph) {
@@ -372,6 +396,13 @@ export default class Stage0Renderer {
   // HELPER FUNCTIONS
   // -=-=-=-=-=-=-=-=-
 
+  /**
+   * Creates a wrapper node for the DOM nodes of submorphs of a node.
+   * This wrapper is necessary for the absolute positioning of submorph nodes when their positioning is not governed by a CSS layout.
+   * @see installWrapperNode().
+   * @param {type} morph - description
+   * @returns {Node} The wrapper node for `morph`.
+   */
   submorphWrapperNodeFor (morph) {
     let { borderWidthLeft, borderWidthTop, origin: { x: oX, y: oY } } = morph;
 
@@ -388,16 +419,29 @@ export default class Stage0Renderer {
     return node;
   }
 
+  /**
+   * Cleans up the rendering queue at the end of each render cycle.
+   */
   emptyRenderQueues () {
     this.morphsWithStructuralChanges = [];
     this.renderedMorphsWithChanges = [];
     this.renderedMorphsWithAnimations = [];
   }
 
+  /**
+   * @param {Morph} morph
+   * @returns {Node} The node via which `morph` is rendered into the DOM.
+   */
   getNodeForMorph (morph) {
     return this.renderMap.get(morph);
   }
 
+  /**
+   * Removing a Node from the DOM and hanging it back in will lead to the node losing its scroll position.
+   * Thus, when we e.g. update the position of a morph's node in the DOM, we afterwards need to update the
+   * scroll position of the actual node with what we have stored in the morphic data model. 
+   * @param {Morph} morph - The morph for which to update the scroll of its node.
+   */
   updateNodeScrollFromMorph (morph) {
     const node = this.getNodeForMorph(morph);
     const { x, y } = morph.scroll;
@@ -408,6 +452,14 @@ export default class Stage0Renderer {
   // -=-=-=-=-=-
   // NODE TYPES
   // -=-=-=-=-=-
+
+  /**
+   * @see nodeForMorph utilizes a double dispatch in order to generate the DOM node(s) for a morph.
+   * In the default case (this method) this results in a `DIV` node. Other morphs may consist of multiple nodes
+   * or a different node type. Those are handled in the methods below.
+   * @param {Morph} morph - a morph to be rendered.
+   * @returns {Node} A `DIV` node.
+   */
   nodeForMorph (morph) {
     return this.doc.createElement('div');
   }
@@ -465,14 +517,161 @@ export default class Stage0Renderer {
     return node;
   }
 
-  lineNodeFunctionFor (morph) {
-    return (line) => this.nodeForLine(line, morph);
+  // -=-=-=-=-=-=-=-=-=-=-=-
+  // SVGs, Path and Polygons
+  // -=-=-=-=-=-=-=-=-=-=-=-      
+  nodeForPath (morph) {
+    const node = this.doc.createElement('div');
+    applyAttributesToNode(morph, node);
+
+    const innerSvg = this.createSvgForPolygon();
+    const pathElem = this.doc.createElementNS(svgNs, 'path');
+    pathElem.setAttribute('id', 'svg' + morph.id);
+    const defNode = this.doc.createElementNS(svgNs, 'defs');
+    innerSvg.appendChild(pathElem);
+    innerSvg.appendChild(defNode);
+
+    const outerSvg = this.createSvgForPolygon();
+
+    node.appendChild(innerSvg);
+    node.appendChild(outerSvg);
+    return node;
   }
 
-  textLayerNodeFunctionFor (morph) {
-    return () => this.textLayerNodeFor(morph);
+  createSvgForPolygon () {
+    const elem = this.doc.createElementNS(svgNs, 'svg');
+    elem.style.position = 'absolute';
+    elem.style.overflow = 'visible';
+    return elem;
   }
 
+  // -=-=-=-=-=-=-=-=-=-=-=-=-=-
+  // TEXT MORPH NODE CREATIONS
+  // -=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+  /**
+   * The text morph adheres to logic that is quite a bit more complicated than the other morphs.
+   * This is a) because it consists of many different nodes and b) the updating logic of it is complex,
+   * since lines need to be rendered efficiently even when interactively edited and since we wing selections, cursors, etc. ourselves,
+   * we need to keep book where each line/character starts and ends. 
+   * @param {TextMorph} morph - The TextMorph to create a node for.
+   * @returns {Node} The DOM node for `morph`, with text layer etc.
+   */
+  nodeForText (morph) {
+    let scrollLayerNode;
+    const node = this.doc.createElement('div');
+
+    const textLayer = this.textLayerNodeFor(morph);
+
+    /*
+      The scrollLayer is mecessary for Text that can be interactively edited.
+      For performance reasons, we do not render all lines in this case, but only the ones that are visible.
+      This means, that when scrolling in such a morph, the lines (divs) are exchanged/updated.
+      For some reason, changing the subnodes of a DOM node that is simultaneously scrolled will lead to unsmooth scrolling.
+      With this trick, the scrollLayer is the node that actually gets scrolled, while we can exchange all line nodes as we like.
+      Since for non-interactive text all lines are rendered once, this trick in not needed.
+    */
+    if (!morph.labelMode) {
+      if (morph.document) { // fixme hack
+        scrollLayerNode = this.renderScrollLayer(morph);
+        node.appendChild(scrollLayerNode);
+      }
+      const textLayerForFontMeasure = this.textLayerNodeFor(morph);
+      // hackz
+      textLayerForFontMeasure.classList.remove('actual');
+      textLayerForFontMeasure.classList.add('font-measure');
+      node.appendChild(textLayerForFontMeasure);
+    }
+
+    if (!morph.labelMode && morph.document) { // fixme hack
+      const scrollWrapper = this.scrollWrapperFor(morph);
+      node.appendChild(scrollWrapper);
+      scrollWrapper.appendChild(textLayer);
+    } else node.appendChild(textLayer);
+    this.renderTextAndAttributes(node, morph);
+    if (morph.document) {
+      const textLayerNode = node.querySelector('.actual');
+      this.updateExtentsOfLines(textLayerNode, morph);
+    }
+    return node;
+  }
+
+  /**
+   * When the TextMorph is set up to be interactive we decouple scrolling of the text
+   * via a separate scroll layer that captures the scroll events from the user.
+   * @param {Text} morph - The TextMorph to be rendered.
+   */
+  renderScrollLayer (morph) {
+    const horizontalScrollBarVisible = morph.document.width > morph.width;
+    const scrollBarOffset = horizontalScrollBarVisible ? morph.scrollbarOffset : pt(0, 0);
+    const verticalPaddingOffset = morph.padding.top() + morph.padding.bottom();
+    const node = this.doc.createElement('div');
+    node.classList.add('scrollLayer');
+    node.style.position = 'absolute';
+    node.style.top = '0px';
+    node.style.width = '100%';
+    node.style.height = '100%';
+    node.style['overflow-anchor'] = 'none';
+
+    const subnode = this.doc.createElement('div');
+    subnode.style.width = Math.max(morph.document.width, morph.width) + 'px';
+    subnode.style.height = Math.max(morph.document.height, morph.height) - scrollBarOffset.y + verticalPaddingOffset + 'px';
+
+    node.appendChild(subnode);
+    return node;
+  }
+
+  /**
+   * @param {TextMorph} morph
+   * @returns {Node} DOM Node of the scrolLWrappers, i.e. the node in which scrollable content (lines,...) are wrapped.
+   */
+  scrollWrapperFor (morph) {
+    const scrollWrapper = this.doc.createElement('div');
+    scrollWrapper.classList.add('scrollWrapper');
+    scrollWrapper.style['pointer-events'] = 'none',
+    scrollWrapper.style.position = 'absolute',
+    scrollWrapper.style.width = '100%',
+    scrollWrapper.style.height = '100%',
+    scrollWrapper.style.transform = `translate(-${morph.scroll.x}px, -${morph.scroll.y}px)`;
+    return scrollWrapper;
+  }
+
+  /**
+   * Changing a TextMorph's mode from Label-Mode to interactive warrants the addition of a scrollLayer.
+   * @see renderScrollLayer.
+   * The other way around will warrant the removal of this layer.
+   * This method gets called when either an addition or removal is needed and takes care of the necessary DOM operations.
+   * @param {Node} node - Node of a TextMorph. 
+   * @param {TextMorph} morph - The TextMorph which has changes that warrant the addition/removal of a ScrollLayer.  
+   */
+  handleScrollLayer (node, morph) {
+    if (morph.renderingState.needsScrollLayerAdded) {
+      if (node.querySelector('.scrollWrapper')) {
+        delete morph.renderingState.needsScrollLayerAdded;
+        return;
+      }
+      const scrollLayer = this.renderScrollLayer(morph);
+      const scrollWrapper = this.scrollWrapperFor(morph);
+      node.childNodes.forEach(c => scrollWrapper.appendChild(c));
+      node.appendChild(scrollLayer);
+      node.appendChild(scrollWrapper);
+      delete morph.renderingState.needsScrollLayerAdded;
+    } else if (morph.renderingState.needsScrollLayerRemoved) {
+      node.querySelector('.scrollLayer').remove();
+      const wrapper = node.querySelector('.scrollWrapper');
+      Array.from(wrapper.children).forEach(c => node.append(c));
+      wrapper.remove();
+      delete morph.renderingState.needsScrollLayerRemoved;
+    }
+  }
+
+  /**
+   * The texlayer is a node that wraps text content (line node,...) of a TextMorph.
+   * It sets styling properties that are applicable for the whole text (like a specific font set on the morph property).
+   * Those might be overriden by styes that are later rendered inline on line nodes.
+   * @param {TextMorph} morph - TextMorph for which the text layer node is to be created.
+   * @returns {Node} A DOM node for the text layer of `morph`.
+   */
   textLayerNodeFor (morph) {
     const {
       lineWrapping,
@@ -484,7 +683,7 @@ export default class Stage0Renderer {
     let textLayerClasses = 'newtext-text-layer actual';
 
     // TODO: we want to support right and left align also for morpht that have a non-fixed widht and or height
-    textLayerClasses = textLayerClasses + ' ' + (fixedWidth ? this.lineWrappingToClass(lineWrapping) : this.lineWrappingToClass(false));
+    textLayerClasses = textLayerClasses + ' ' + (fixedWidth ? lineWrappingToClass(lineWrapping) : lineWrappingToClass(false));
 
     // TODO: we want to support right and left align also for morpht that have a non-fixed widht and or height
     if (!fixedWidth) textLayerClasses = textLayerClasses + ' auto-width';
@@ -500,88 +699,23 @@ export default class Stage0Renderer {
     return node;
   }
 
-  updateDebugLayer (node, morph) {
-    const textNode = node.querySelector('.actual');
-    textNode.querySelectorAll('.debug-line, .debug-char, .debug-info').forEach(n => n.remove());
-    if (morph.debug) textNode.append(...this.renderDebugLayer(morph));
-  }
-
-  renderTextAndAttributes (node, morph) {
-    const textNode = node.querySelector('.actual');
-    if (morph.labelMode) textNode.replaceChildren(...this.renderAllLines(morph));
-    else {
-      if (morph.debug) textNode.querySelectorAll('.debug-line, .debug-char, .debug-info').forEach(n => n.remove());
-      const linesToRender = this.collectVisibleLinesForRendering(morph, node);
-      morph.viewState.visibleLines = linesToRender;
-      keyed('row',
-        textNode,
-        morph.renderingState.renderedLines,
-        linesToRender,
-        item => this.nodeForLine(item, morph, true),
-        noOpUpdate,
-        textNode.firstChild,
-        null
-      );
-      morph.renderingState.renderedLines = morph.viewState.visibleLines;
-      let i = 0; // the first child is always the filler, we can skip it
-      for (const line of morph.renderingState.renderedLines) {
-        i++;
-        if (!line.needsRerender) continue;
-        const oldLineNode = textNode.children[i];
-        const newLineNode = this.nodeForLine(line, morph, true);
-        textNode.replaceChild(newLineNode, oldLineNode);
-      }
-    }
-    if (morph.document) {
-      this.updateExtentsOfLines(textNode, morph);
-    }
-
-    let inlineMorphUpdated = false;
-    morph.textAndAttributes.forEach(ta => {
-      if (ta && ta.isMorph && ta.renderingState.needsRerender) {
-        ta.renderingState.needsRerender = false;
-        inlineMorphUpdated = true;
-      }
-    });
-    if (inlineMorphUpdated) morph.invalidateTextLayout(true, false);
-    morph.renderingState.renderedTextAndAttributes = morph.textAndAttributes;
-    morph.renderingState.extent = morph.extent;
-  }
-
-  patchLineHeightAndLetterSpacing (node, morph) {
-    node.querySelectorAll('.newtext-text-layer').forEach(node => {
-      if (morph.letterSpacing) node.style.letterSpacing = morph.letterSpacing;
-      else delete node.style.letteSpacing;
-      node.style.lineHeight = morph.lineHeight;
-    });
-    morph.document.lines.forEach(l => l.needsRerender = true);
-    this.renderTextAndAttributes(node, morph);
-    morph.renderingState.lineHeight = morph.lineHeight;
-    morph.renderingState.letterSpacing = morph.letterSpacing;
-  }
-
-  renderMorphInLine (morph, attr) {
-    // TODO: investigate if this is necessary 
-    attr = attr || {};
-    const rendered = this.renderMorph(morph);
-    rendered.style.position = 'sticky';
-    rendered.style.transform = '';
-    rendered.style.textAlign = 'initial';
-    rendered.style.removeProperty('top');
-    rendered.style.removeProperty('left');
-
-    // fixme:  this addition screws up the bounds computation of the embedded submorph
-    if (attr.paddingTop) rendered.style.marginTop = attr.paddingTop;
-    if (attr.paddingLeft) rendered.style.marginLeft = attr.paddingLeft;
-    if (attr.paddingRight) rendered.style.marginRight = attr.paddingRight;
-    if (attr.paddingBottom) rendered.style.marginBottom = attr.paddingBottom;
-    morph.needsRerender = false;
-    return rendered;
+  /**
+   * Wrapper function to create textLayerNodes inside of the fontMetric.
+   * This is necessary to calculate e.g. default line/letter extents before actually rendering Text.
+   * This way, we can e.g. estimate which lines need to be renderer inside of a scrolled TextMorph.
+   * @param {Morph} morph - The Morph for which to render the fontMetric.
+   */
+  textLayerNodeFunctionFor (morph) {
+    return () => this.textLayerNodeFor(morph);
   }
 
   /**
    * Renders chunks (1 pair of text and textAttributes) into lines (divs),
-   * Thus returns an array of divs that can each contain multiple spans 
+   * Thus returns an array of divs that can each contain multiple spans
+   * @param {Line|Object} lineObject - The line to be rendered. Can either be a `Line` object or a simple Object adhering to `textAndAttributes` semantics.
+   * @param {TextMorph} morph - The TextMorph in which the line is to be displayed.
+   * @param {Boolean} isRealRender - Indicates whether this is an actual render to display the resulting node in the DOM or if it is a render inside of an invisible node to measure the text to be renderer.
+   * @returns {Node} The DOM node for the line (`DIV`).
    */
   nodeForLine (lineObject, morph, isRealRender = false) {
     const line = lineObject.isLine ? lineObject.textAndAttributes : lineObject;
@@ -703,6 +837,48 @@ export default class Stage0Renderer {
     return node;
   }
 
+  /**
+   * @see textLayerNodeFunctionFor above.
+   */
+  lineNodeFunctionFor (morph) {
+    return (line) => this.nodeForLine(line, morph);
+  }
+
+  /**
+   * Renders a morph embedded inline in a Text. Only takes care of morphs that should be treated as a single text character in the text flow.
+   * For morphs that are rendered with this method `morph._isInline === true`.
+   * @param {Morph} morph - The morph to be rendered.
+   * @param {Object} attr - An Object with which some properties of `morph` can be overwritten.
+   * @returns {Node} The node of the morph to be added as a child of a node for a line.
+   */
+  renderMorphInLine (morph, attr) {
+    // TODO: investigate if this is necessary 
+    attr = attr || {};
+    const rendered = this.renderMorph(morph);
+    rendered.style.position = 'sticky';
+    rendered.style.transform = '';
+    rendered.style.textAlign = 'initial';
+    rendered.style.removeProperty('top');
+    rendered.style.removeProperty('left');
+
+    // fixme:  this addition screws up the bounds computation of the embedded submorph
+    if (attr.paddingTop) rendered.style.marginTop = attr.paddingTop;
+    if (attr.paddingLeft) rendered.style.marginLeft = attr.paddingLeft;
+    if (attr.paddingRight) rendered.style.marginRight = attr.paddingRight;
+    if (attr.paddingBottom) rendered.style.marginBottom = attr.paddingBottom;
+    morph.needsRerender = false;
+    return rendered;
+  }
+
+  // TODO: This is seemingy only used for SamrtTexts that are in Label-Mode. 
+  // Thus, the naming is probably not great. Also, we return undefined in the case that a normal text morph is given...also not ideal.  
+  /**
+   * Creates nodes for all lines present in a Text morph which is in label mode. 
+   * Is based on the assumption, that in these cases `textAndAttributes` are already split into lines (i.e. the pairs for each line are in their own array).
+   * The is as follows: [['text',{},'line1',{}],['text',{},'line2',{}],[...]]
+   * @param {Morph} morph - The morph for which to render the lines.
+   * @returns {Node[]} An array of nodes that represent lines.
+   */
   renderAllLines (morph) {
     const renderedLines = [];
     if (!morph.document) {
@@ -715,185 +891,114 @@ export default class Stage0Renderer {
     return renderedLines;
   }
 
-  collectVisibleLinesForRendering (morph, node) {
+  /**
+   * Creates the nodes responsible for markers in text.
+   * Markers for example take care of highlighting undeclared variables and syntax highlighting.  
+   * @param {Text} morph - The TextMorph owning the markers.
+   * @returns {Node[]} An array of all marker nodes.
+   */
+  renderMarkerLayer (morph) {
     const {
-      height,
-      scroll,
-      document: doc,
-      clipMode,
-      padding: { y: padTop }
+      markers,
+      viewState: { firstVisibleRow, lastVisibleRow }
     } = morph;
-    const scrollTop = scroll.y;
-    const scrollHeight = height;
-    const lastLineNo = doc.rowCount - 1;
-    const textHeight = doc.height;
-    const clipsContent = clipMode !== 'visible';
+    const parts = [];
 
-    const {
-      line: startLine,
-      offset: startOffset,
-      y: heightBefore,
-      row: startRow
-    } = doc.findLineByVerticalOffset(clipsContent ? Math.max(0, clipsContent ? scrollTop - padTop : 0) : 0) ||
-     { row: 0, y: 0, offset: 0, line: doc.getLine(0) };
+    if (!markers) return parts;
 
-    const {
-      line: endLine,
-      offset: endLineOffset,
-      row: endRow
-    } = doc.findLineByVerticalOffset(clipsContent ? Math.min(textHeight, (scrollTop - padTop) + scrollHeight) : textHeight) ||
-     { row: lastLineNo, offset: 0, y: 0, line: doc.getLine(lastLineNo) };
+    for (const m of markers) {
+      const { style, range: { start, end } } = m;
 
-    const firstVisibleRow = clipsContent ? startRow : 0;
-    const firstFullyVisibleRow = startOffset === 0 ? startRow : startRow + 1;
-    const lastVisibleRow = clipsContent ? endRow + 1 : lastLineNo;
-    const lastFullyVisibleRow = !endLine || endLineOffset === endLine.height ? endRow : endRow - 1;
+      if (end.row < firstVisibleRow || start.row > lastVisibleRow) continue;
 
-    morph.maxVisibleLines = Math.max(morph.maxVisibleLines || 1, lastVisibleRow - firstVisibleRow + 1);
+      // single line
+      if (start.row === end.row) {
+        parts.push(this.renderMarkerPart(morph, start, end, style));
+        continue;
+      }
 
-    // NEW NEW NEW 
-    morph.renderingState.maxVisibleLines = morph.maxVisibleLines;
-    morph.renderingState.startLine = firstVisibleRow;
-
-    const visibleLines = [];
-
-    let line = startLine; let i = 0;
-    while (i < morph.maxVisibleLines) {
-      visibleLines.push(line);
-      i++;
-      line = line.nextLine();
-      if (!line) break;
+      // multiple lines
+      // first line
+      parts.push(this.renderMarkerPart(morph, start, morph.lineRange(start.row).end, style));
+      // lines in the middle
+      for (let row = start.row + 1; row <= end.row - 1; row++) {
+        const { start: lineStart, end: lineEnd } = morph.lineRange(row);
+        parts.push(this.renderMarkerPart(morph, lineStart, lineEnd, style, true));
+      }
+      // last line
+      parts.push(this.renderMarkerPart(morph, { row: end.row, column: 0 }, end, style));
     }
 
-    this.updateFillerDIV(node, heightBefore);
-
-    Object.assign(morph.viewState, {
-      scrollTop,
-      scrollHeight,
-      scrollBottom: scrollTop + scrollHeight,
-      heightBefore,
-      textHeight,
-      firstVisibleRow,
-      lastVisibleRow,
-      firstFullyVisibleRow,
-      lastFullyVisibleRow,
-      visibleLines
-    });
-
-    return visibleLines;
-  }
-
-  updateFillerDIV (node, heightBefore) {
-    const textLayer = node.querySelector('.actual');
-    const filler = textLayer.querySelector('.newtext-before-filler');
-    if (filler) {
-      filler.style.height = heightBefore + 'px';
-    } else {
-      const spacer = this.doc.createElement('div');
-      spacer.classList.add('newtext-before-filler');
-      spacer.style.height = heightBefore + 'px';
-      textLayer.insertBefore(spacer, textLayer.firstChild);
-    }
-  }
-
-  measureBoundsFor (morph) {
-    const node = this.getNodeForMorph(morph);
-
-    const textNode = node.querySelector('.actual');
-    const prevParent = textNode.parentNode;
-    this.placeholder.appendChild(textNode);
-    const domMeasure = textNode.getBoundingClientRect();
-    const bounds = new Rectangle(domMeasure.x, domMeasure.y, domMeasure.width, domMeasure.height);
-    prevParent.appendChild(textNode);
-
-    return bounds;
+    return parts;
   }
 
   /**
-   * Renders the slices as specified in renderSelectionLayer to SVG, utilizing a rounded corner
-   * selection style that is stolen from MS Studio Code.
-   * @param {Rectangle[]} slice - The slices to render.
-   * @param {Color} selectionColor - The color of the rendered selection.
-   * @param {Text} morph - The TextMorph to be rendered.
-   * @return Collection of rendered slices as svg.
+   * Creates a node representing a slice of a single/multiline marker.
+   * @param {TextMorph} morph - The text morph owning the markers.
+   * @param {TextPosition} start - The position in the text where the marker starts.
+   * @param {TextPosition} end - The position in the text where the marker ends.
+   * @param {CSSStyle} style - Custom styles for the marker to override the defaults.
+   * @param {Boolean} entireLine - Flag to indicate wether or not the marker part covers the entire line.
+   * @return {Node} A DOM node representing the respective part of the marker.
    */
-  selectionLayerRounded (slices, selectionColor, morph) {
-    // split up the rectangle corners into a left and right batches
-    let currentBatch;
-    const batches = [
-      currentBatch = {
-        left: [], right: []
-      }
-    ];
-
-    let lastSlice;
-    for (const slice of slices) {
-      // if rectangles do not overlap, create a new split batch
-      if (lastSlice && (lastSlice.left() > slice.right() || lastSlice.right() < slice.left())) {
-        batches.push(currentBatch = { left: [], right: [] });
-      }
-      currentBatch.left.push(slice.topLeft(), slice.bottomLeft());
-      currentBatch.right.push(slice.topRight(), slice.bottomRight());
-      lastSlice = slice;
+  renderMarkerPart (morph, start, end, style, entireLine = false) {
+    let startX = 0; let endX = 0; let y = 0; let height = 0;
+    const { document: doc, textLayout } = morph;
+    const line = doc.getLine(start.row);
+    if (entireLine) {
+      const { padding } = morph;
+      startX = padding.left();
+      y = padding.top() + doc.computeVerticalOffsetOf(start.row);
+      endX = startX + line.width;
+      height = line.height;
+    } else {
+      ({ x: startX, y } = textLayout.boundsFor(morph, start));
+      ({ x: endX, height } = textLayout.boundsFor(morph, end));
     }
-    // turn each of the batches into its own svg path
-    const svgs = [];
-    for (const batch of batches) {
-      if (!batch.left.length) continue;
-      const pos = batch.left.reduce((p1, p2) => p1.minPt(p2)); // topLeft of the path
-      const vs = batch.left.concat(batch.right.reverse());
-
-      // move a sliding window over each vertex
-      let updatedVs = [];
-      for (let vi = 0; vi < vs.length; vi++) {
-        const prevV = vs[vi - 1] || arr.last(vs);
-        const currentV = vs[vi];
-        const nextV = vs[vi + 1] || arr.first(vs);
-
-        // replace the vertex by two adjacent ones offset by distance
-        const offset = 6;
-        const offsetV1 = prevV.subPt(currentV).normalized().scaleBy(offset);
-        const p1 = currentV.addPt(offsetV1);
-        p1._next = offsetV1.scaleBy(-1);
-        const offsetV2 = nextV.subPt(currentV).normalized().scaleBy(offset);
-        const p2 = currentV.addPt(offsetV2);
-        p2._prev = offsetV2.scaleBy(-1);
-
-        updatedVs.push(p1, p2);
-      }
-
-      updatedVs = updatedVs.map(p => ({
-        position: p.subPt(pos), isSmooth: true, controlPoints: { next: p._next || pt(0), previous: p._prev || pt(0) }
-      })
-      );
-
-      const d = getSvgVertices(updatedVs);
-      const { y: minY, x: minX } = updatedVs.map(p => p.position).reduce((p1, p2) => p1.minPt(p2));
-      const { y: maxY, x: maxX } = updatedVs.map(p => p.position).reduce((p1, p2) => p1.maxPt(p2));
-      const height = maxY - minY;
-      const width = maxX - minX;
-      const pathNode = this.doc.createElementNS(svgNs, 'path');
-      pathNode.setAttribute('fill', selectionColor.toString());
-      pathNode.setAttribute('d', d);
-
-      const svgNode = this.doc.createElementNS(svgNs, 'svg');
-      svgNode.classList.add('selection');
-      svgNode.setAttribute('style', `position: absolute; left: ${pos.x}px;top: ${pos.y}px; width: ${width}px; height: ${height}px`);
-
-      svgNode.appendChild(pathNode);
-      svgs.push(svgNode);
+    height = Math.ceil(height);
+    const node = this.doc.createElement('div');
+    node.classList.add('newtext-marker-layer');
+    node.style.left = startX + 'px';
+    node.style.top = y + 'px';
+    node.style.height = height + 'px';
+    node.style.width = endX - startX + 'px';
+    for (const prop in style) {
+      node.style[prop] = style[prop];
     }
 
-    return svgs;
+    return node;
+  }
+
+  // TODO: this needs to be updated once the different selection modes (native, lively, none) work as expected.
+  /**
+   * When a TextMorph is set up to support selections we render our custom
+   * selection layer instead of the HTML one which we can not control.
+   * @param {Text} morph - The TextMorph to be rendered.
+   * @ returns {Node[]} An array of SVG Nodes that represent the selection to be displayed, including a cursor.
+   */
+  renderSelectionLayer (morph) {
+    if (!morph.document || !morph.selection) return [];
+    const cursorWidth = morph.cursorWidth || 1;
+    const sel = morph.selection;
+    if (morph.inMultiSelectMode()) {
+      const selectionLayer = [];
+      const sels = sel.selections; let i = 0;
+      for (; i < sels.length - 1; i++) { selectionLayer.push(...this.renderSelectionPart(morph, sels[i], true/* diminished */, 2)); }
+      selectionLayer.push(...this.renderSelectionPart(morph, sels[i], false/* diminished */, 4));
+      return selectionLayer;
+    } else {
+      return this.renderSelectionPart(morph, sel, false, cursorWidth);
+    }
   }
 
   /**
    * Since we can not control the selection of HTML DOM-Nodes we wing it ourselves.
    * Here we render a custom DOM representation of the current selection within a TextMorph.
-   * @param {Text} morph - The TextMorph to be rendered.
+   * @param {Text} morph - The TextMorph to display selections.
    * @param {Selection} selection - The selection to be rendered.
    * @param {Boolean} diminished - Wether or not to render the cursor diminished.
-   * @param {Integer} cursroWidth - The width of the cursor.
+   * @param {Integer} cursorWidth - The width of the cursor.
+   * @returns {Node[]} An array of SVG Nodes that represent one selection to be displayed, including a cursor.}
    */
   renderSelectionPart (morph, selection, diminished = false, cursorWidth = 2) {
     if (!selection) return [];
@@ -997,35 +1102,14 @@ export default class Stage0Renderer {
     }
 
     const renderedSelection = this.selectionLayerRounded(slices, selectionColor, morph);
-
     renderedSelection.push(renderedCursor);
     return renderedSelection;
   }
 
   /**
-   * When a TextMorph is set up to support selections we render our custom
-   * selection layer instead of the HTML one which we can not control.
-   * @param {Text} morph - The TextMorph to be rendered.
-   */
-  renderSelectionLayer (morph) {
-    if (!morph.document || !morph.selection) return [];
-    const cursorWidth = morph.cursorWidth || 1;
-    const sel = morph.selection;
-    if (morph.inMultiSelectMode()) {
-      const selectionLayer = [];
-      const sels = sel.selections; let i = 0;
-      for (; i < sels.length - 1; i++) { selectionLayer.push(...this.renderSelectionPart(morph, sels[i], true/* diminished */, 2)); }
-      selectionLayer.push(...this.renderSelectionPart(morph, sels[i], false/* diminished */, 4));
-      return selectionLayer;
-    } else {
-      return this.renderSelectionPart(morph, sel, false, cursorWidth);
-    }
-  }
-
-  /**
    * Renders a TextMorph's text cursor.
-   * @param {Point} pos - The slices to render.
-   * @param {Number} height - The slices to render.
+   * @param {Point} pos - The position of the Cursor.
+   * @param {Number} height - Height of the cursor to be rendered in pixels.
    * @param {Boolean} visible - Wether or not to display the cursor.
    * @param {Boolean} diminished - Wether or not to render the cursor diminished.
    * @param {Number} width - The width of the cursor in pixels.
@@ -1045,145 +1129,88 @@ export default class Stage0Renderer {
   }
 
   /**
-   * When the TextMorph is set up to be interactive we decouple scrolling of the text
-   * via a separate scroll layer that captures the scroll events from the user.
+   * Renders the slices as specified in renderSelectionLayer to SVG, utilizing a rounded corner
+   * selection style that is stolen from MS Studio Code.
+   * @param {Rectangle[]} slice - The slices to render.
+   * @param {Color} selectionColor - The color of the rendered selection.
    * @param {Text} morph - The TextMorph to be rendered.
+   * @returns {SVGNode} Rendered slices as `SVG`.
    */
-  renderScrollLayer (morph) {
-    const horizontalScrollBarVisible = morph.document.width > morph.width;
-    const scrollBarOffset = horizontalScrollBarVisible ? morph.scrollbarOffset : pt(0, 0);
-    const verticalPaddingOffset = morph.padding.top() + morph.padding.bottom();
-    const node = this.doc.createElement('div');
-    node.classList.add('scrollLayer');
-    node.style.position = 'absolute';
-    node.style.top = '0px';
-    node.style.width = '100%';
-    node.style.height = '100%';
-    node.style['overflow-anchor'] = 'none';
-
-    const subnode = this.doc.createElement('div');
-    subnode.style.width = Math.max(morph.document.width, morph.width) + 'px';
-    subnode.style.height = Math.max(morph.document.height, morph.height) - scrollBarOffset.y + verticalPaddingOffset + 'px';
-
-    node.appendChild(subnode);
-    return node;
-  }
-
-  scrollWrapperFor (morph) {
-    const scrollWrapper = this.doc.createElement('div');
-    scrollWrapper.classList.add('scrollWrapper');
-    scrollWrapper.style['pointer-events'] = 'none',
-    scrollWrapper.style.position = 'absolute',
-    scrollWrapper.style.width = '100%',
-    scrollWrapper.style.height = '100%',
-    scrollWrapper.style.transform = `translate(-${morph.scroll.x}px, -${morph.scroll.y}px)`;
-    return scrollWrapper;
-  }
-
-  adjustScrollLayerChildSize (node, morph) {
-    const scrollLayer = node.querySelectorAll('.scrollLayer')[0];
-    if (!scrollLayer) return;
-    const horizontalScrollBarVisible = morph.document.width > morph.width;
-    const scrollBarOffset = horizontalScrollBarVisible ? morph.scrollbarOffset : pt(0, 0);
-    const verticalPaddingOffset = morph.padding.top() + morph.padding.bottom();
-    scrollLayer.firstChild.style.width = Math.max(morph.document.width, morph.width) + 'px';
-    scrollLayer.firstChild.style.height = Math.max(morph.document.height, morph.height) - scrollBarOffset.y + verticalPaddingOffset + 'px';
-  }
-
-  scrollScrollLayerFor (node, morph) {
-    const scrollWrapper = node.querySelectorAll('.scrollWrapper')[0];
-    if (!scrollWrapper) return;
-    scrollWrapper.style.transform = `translate(-${morph.scroll.x}px, -${morph.scroll.y}px)`;
-    morph.renderingState.scroll = morph.scroll;
-    this.renderTextAndAttributes(node, morph);
-  }
-
-  patchTextLayerStyleObject (node, morph, newStyle) {
-    const textLayer = node.querySelector('.actual');
-    const fontMeasureTextLayer = node.querySelector('.font-measure');
-    stylepropsToNode(newStyle, textLayer);
-    stylepropsToNode(newStyle, fontMeasureTextLayer);
-    morph.renderingState.nodeStyleProps = newStyle;
-    morph.invalidateTextLayout(true, false);
-  }
-
-  lineWrappingToClass (lineWrapping) {
-    switch (lineWrapping) {
-      case true:
-      case 'by-words': return 'wrap-by-words';
-      case 'only-by-words': return 'only-wrap-by-words';
-      case 'by-chars': return 'wrap-by-chars';
-    }
-    return 'no-wrapping';
-  }
-
-  patchLineWrapping (node, morph) {
-    const oldWrappingClass = this.lineWrappingToClass(morph.renderingState.lineWrapping);
-    const newWrappingClass = morph.fixedWidth ? this.lineWrappingToClass(morph.lineWrapping) : this.lineWrappingToClass(false);
-
-    const textLayer = node.querySelector('.actual');
-    const fontMeasureTextLayer = node.querySelector('.font-measure');
-
-    textLayer.classList.remove(oldWrappingClass);
-    fontMeasureTextLayer.classList.remove(oldWrappingClass);
-
-    textLayer.classList.add(newWrappingClass);
-    fontMeasureTextLayer.classList.add(newWrappingClass);
-
-    morph.renderingState.lineWrapping = morph.lineWrapping;
-    morph.renderingState.fixedWidth = morph.fixedWidth;
-  }
-
-  clearTextNodeSubnodesFor (morph) {
-    const textNode = this.getNodeForMorph(morph);
-    textNode.querySelector('.actual').replaceChildren();
-  }
-
-  nodeForText (morph) {
-    let scrollLayerNode;
-    const node = this.doc.createElement('div');
-
-    const textLayer = this.textLayerNodeFor(morph);
-
-    /*
-      The scrollLayer is mecessary for Text that can be interactively edited.
-      For performance reasons, we do not render all lines in this case, but only the ones that are visible.
-      This means, that when scrolling in such a morph, the lines (divs) are exchanged/updated.
-      For some reason, changing the subnodes of a DOM node that is simultaneously scrolled will lead to unsmooth scrolling.
-      With this trick, the scrollLayer is the node that actually gets scrolled, while we can exchange all line nodes as we like.
-      Since for non-interactive text all lines are rendered once, this trick in not needed.
-    */
-    if (!morph.labelMode) {
-      if (morph.document) { // fixme hack
-        scrollLayerNode = this.renderScrollLayer(morph);
-        node.appendChild(scrollLayerNode);
+  selectionLayerRounded (slices, selectionColor, morph) {
+    // split up the rectangle corners into a left and right batches
+    let currentBatch;
+    const batches = [
+      currentBatch = {
+        left: [], right: []
       }
-      const textLayerForFontMeasure = this.textLayerNodeFor(morph);
-      // hackz
-      textLayerForFontMeasure.classList.remove('actual');
-      textLayerForFontMeasure.classList.add('font-measure');
-      node.appendChild(textLayerForFontMeasure);
+    ];
+
+    let lastSlice;
+    for (const slice of slices) {
+      // if rectangles do not overlap, create a new split batch
+      if (lastSlice && (lastSlice.left() > slice.right() || lastSlice.right() < slice.left())) {
+        batches.push(currentBatch = { left: [], right: [] });
+      }
+      currentBatch.left.push(slice.topLeft(), slice.bottomLeft());
+      currentBatch.right.push(slice.topRight(), slice.bottomRight());
+      lastSlice = slice;
+    }
+    // turn each of the batches into its own svg path
+    const svgs = [];
+    for (const batch of batches) {
+      if (!batch.left.length) continue;
+      const pos = batch.left.reduce((p1, p2) => p1.minPt(p2)); // topLeft of the path
+      const vs = batch.left.concat(batch.right.reverse());
+
+      // move a sliding window over each vertex
+      let updatedVs = [];
+      for (let vi = 0; vi < vs.length; vi++) {
+        const prevV = vs[vi - 1] || arr.last(vs);
+        const currentV = vs[vi];
+        const nextV = vs[vi + 1] || arr.first(vs);
+
+        // replace the vertex by two adjacent ones offset by distance
+        const offset = 6;
+        const offsetV1 = prevV.subPt(currentV).normalized().scaleBy(offset);
+        const p1 = currentV.addPt(offsetV1);
+        p1._next = offsetV1.scaleBy(-1);
+        const offsetV2 = nextV.subPt(currentV).normalized().scaleBy(offset);
+        const p2 = currentV.addPt(offsetV2);
+        p2._prev = offsetV2.scaleBy(-1);
+
+        updatedVs.push(p1, p2);
+      }
+
+      updatedVs = updatedVs.map(p => ({
+        position: p.subPt(pos), isSmooth: true, controlPoints: { next: p._next || pt(0), previous: p._prev || pt(0) }
+      })
+      );
+
+      const d = getSvgVertices(updatedVs);
+      const { y: minY, x: minX } = updatedVs.map(p => p.position).reduce((p1, p2) => p1.minPt(p2));
+      const { y: maxY, x: maxX } = updatedVs.map(p => p.position).reduce((p1, p2) => p1.maxPt(p2));
+      const height = maxY - minY;
+      const width = maxX - minX;
+      const pathNode = this.doc.createElementNS(svgNs, 'path');
+      pathNode.setAttribute('fill', selectionColor.toString());
+      pathNode.setAttribute('d', d);
+
+      const svgNode = this.doc.createElementNS(svgNs, 'svg');
+      svgNode.classList.add('selection');
+      svgNode.setAttribute('style', `position: absolute; left: ${pos.x}px;top: ${pos.y}px; width: ${width}px; height: ${height}px`);
+
+      svgNode.appendChild(pathNode);
+      svgs.push(svgNode);
     }
 
-    if (!morph.labelMode && morph.document) { // fixme hack
-      const scrollWrapper = this.scrollWrapperFor(morph);
-      node.appendChild(scrollWrapper);
-      scrollWrapper.appendChild(textLayer);
-    } else node.appendChild(textLayer);
-    this.renderTextAndAttributes(node, morph);
-    if (morph.document) {
-      const textLayerNode = node.querySelector('.actual');
-      this.updateExtentsOfLines(textLayerNode, morph);
-    }
-    return node;
-    // TODO: submorphs and stuff (see renderMorphFast in text/renderer.js)
+    return svgs;
   }
 
   /**
    * Renders the debug layer of a TextMorph, which visualizes the bounds computed
    * by the text layout.
-   * @param {Text} morph - The text morph to visualize the text layout for.
-   * @return {VNode} A virtual dom node representing the debug layer.
+   * @param {TextMorph} morph - The text morph to visualize the text layout for.
+   * @return {Node[]} An array of DOM nodes that comprise the debug layer.
    */
   renderDebugLayer (morph) {
     const vs = morph.viewState;
@@ -1246,27 +1273,143 @@ export default class Stage0Renderer {
     return debugHighlights;
   }
 
-  handleScrollLayer (node, morph) {
-    if (morph.renderingState.needsScrollLayerAdded) {
-      if (node.querySelector('.scrollWrapper')) {
-        delete morph.renderingState.needsScrollLayerAdded;
-        return;
-      }
-      const scrollLayer = this.renderScrollLayer(morph);
-      const scrollWrapper = this.scrollWrapperFor(morph);
-      node.childNodes.forEach(c => scrollWrapper.appendChild(c));
-      node.appendChild(scrollLayer);
-      node.appendChild(scrollWrapper);
-      delete morph.renderingState.needsScrollLayerAdded;
-    } else if (morph.renderingState.needsScrollLayerRemoved) {
-      node.querySelector('.scrollLayer').remove();
-      const wrapper = node.querySelector('.scrollWrapper');
-      Array.from(wrapper.children).forEach(c => node.append(c));
-      wrapper.remove();
-      delete morph.renderingState.needsScrollLayerRemoved;
+  // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+  // SPECIAL METHODS FOR UPDATING ALREADY EXISTING NODES IN THE RENDER CYCLE
+  // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+
+  // -=-=-=-=-=-
+  // TEXT MORPH
+  // -=-=-=-=-=-
+
+  /**
+   * Finds out how many and which lines can be dislpayed in `morph`, adapts the values in `morphs`'s viewState accordingly,
+   * and updates the fillerDiv that is used to push the lines inside of the visible are of `morph`'s node.
+   * The last part is necessary since the scrolling layer and the content part of the `morph` are decoupled.
+   * @param {TextMorph} morph - The morph for which we want to find out which lines are visible.
+   * @param {Node} node - `morph`'s node inside of the DOM.
+   * @returns {Line[]} An arry containing the `Line` objects of all visible lines.
+   */
+  collectVisibleLinesForRendering (morph, node) {
+    const {
+      height,
+      scroll,
+      document: doc,
+      clipMode,
+      padding: { y: padTop }
+    } = morph;
+    const scrollTop = scroll.y;
+    const scrollHeight = height;
+    const lastLineNo = doc.rowCount - 1;
+    const textHeight = doc.height;
+    const clipsContent = clipMode !== 'visible';
+
+    const {
+      line: startLine,
+      offset: startOffset,
+      y: heightBefore,
+      row: startRow
+    } = doc.findLineByVerticalOffset(clipsContent ? Math.max(0, clipsContent ? scrollTop - padTop : 0) : 0) ||
+     { row: 0, y: 0, offset: 0, line: doc.getLine(0) };
+
+    const {
+      line: endLine,
+      offset: endLineOffset,
+      row: endRow
+    } = doc.findLineByVerticalOffset(clipsContent ? Math.min(textHeight, (scrollTop - padTop) + scrollHeight) : textHeight) ||
+     { row: lastLineNo, offset: 0, y: 0, line: doc.getLine(lastLineNo) };
+
+    const firstVisibleRow = clipsContent ? startRow : 0;
+    const firstFullyVisibleRow = startOffset === 0 ? startRow : startRow + 1;
+    const lastVisibleRow = clipsContent ? endRow + 1 : lastLineNo;
+    const lastFullyVisibleRow = !endLine || endLineOffset === endLine.height ? endRow : endRow - 1;
+
+    morph.maxVisibleLines = Math.max(morph.maxVisibleLines || 1, lastVisibleRow - firstVisibleRow + 1);
+
+    // NEW NEW NEW 
+    morph.renderingState.maxVisibleLines = morph.maxVisibleLines;
+    morph.renderingState.startLine = firstVisibleRow;
+
+    const visibleLines = [];
+
+    let line = startLine; let i = 0;
+    while (i < morph.maxVisibleLines) {
+      visibleLines.push(line);
+      i++;
+      line = line.nextLine();
+      if (!line) break;
     }
+
+    this.updateFillerDIV(node, heightBefore);
+
+    Object.assign(morph.viewState, {
+      scrollTop,
+      scrollHeight,
+      scrollBottom: scrollTop + scrollHeight,
+      heightBefore,
+      textHeight,
+      firstVisibleRow,
+      lastVisibleRow,
+      firstFullyVisibleRow,
+      lastFullyVisibleRow,
+      visibleLines
+    });
+
+    return visibleLines;
   }
 
+  /**
+   * Takes care of creating and/or updating the necessary nodes to display a TextMorphs text.
+   * Reconciles LineNodes when e.g. a new Line is inserted between already existing ones and takes care of updating existing lines that have been changed.
+   * @param {Node} node - The DOM Node of `morph`
+   * @param {TextMorph} morph - The TextMorph for which the text should be (re)rendered.
+   */
+  renderTextAndAttributes (node, morph) {
+    const textNode = node.querySelector('.actual');
+    if (morph.labelMode) textNode.replaceChildren(...this.renderAllLines(morph));
+    else {
+      if (morph.debug) textNode.querySelectorAll('.debug-line, .debug-char, .debug-info').forEach(n => n.remove());
+      const linesToRender = this.collectVisibleLinesForRendering(morph, node);
+      morph.viewState.visibleLines = linesToRender;
+      keyed('row',
+        textNode,
+        morph.renderingState.renderedLines,
+        linesToRender,
+        item => this.nodeForLine(item, morph, true),
+        noOpUpdate,
+        textNode.firstChild,
+        null
+      );
+      morph.renderingState.renderedLines = morph.viewState.visibleLines;
+      let i = 0; // the first child is always the filler, we can skip it
+      for (const line of morph.renderingState.renderedLines) {
+        i++;
+        if (!line.needsRerender) continue;
+        const oldLineNode = textNode.children[i];
+        const newLineNode = this.nodeForLine(line, morph, true);
+        textNode.replaceChild(newLineNode, oldLineNode);
+      }
+    }
+    if (morph.document) {
+      this.updateExtentsOfLines(textNode, morph);
+    }
+
+    let inlineMorphUpdated = false;
+    morph.textAndAttributes.forEach(ta => {
+      if (ta && ta.isMorph && ta.renderingState.needsRerender) {
+        ta.renderingState.needsRerender = false;
+        inlineMorphUpdated = true;
+      }
+    });
+    if (inlineMorphUpdated) morph.invalidateTextLayout(true, false);
+    morph.renderingState.renderedTextAndAttributes = morph.textAndAttributes;
+    morph.renderingState.extent = morph.extent;
+  }
+
+  /**
+   * Removes and rerenders the current selections in a TextMorph to update them.
+   * @param {Node} node - The DOM node in which `morph` is rendered.
+   * @param {TextMorph} morph - The TextMorph which selections were changed. 
+   */
   patchSelectionLayer (node, morph) {
     if (!node) return; // fixme
     node.querySelectorAll('div.newtext-cursor').forEach(c => c.remove());
@@ -1277,46 +1420,127 @@ export default class Stage0Renderer {
   }
 
   /**
-   * Renders a slice of a single/multiline marker.
-   * @param {Text} morph - The text morph owning the markers.
-   * @param {TextPosition} start - The position in the text where the marker starts.
-   * @param {TextPosition} end - The position in the text where the marker ends.
-   * @param {CSSStyle} style - Custom styles for the marker to override the defaults.
-   * @param {Boolean} entireLine - Flag to indicate wether or not the marker part covers the entire line.
-   * @return {VNode} A virtual dom node representing the respective part of the marker.
+   * Removes and rerenders the current markers in a TextMorph to update them.
+   * @param {Node} node - The DOM node in which `morph` is rendered.
+   * @param {TextMorph} morph - The TextMorph which markers were changed. 
    */
-  renderMarkerPart (morph, start, end, style, entireLine = false) {
-    let startX = 0; let endX = 0; let y = 0; let height = 0;
-    const { document: doc, textLayout } = morph;
-    const line = doc.getLine(start.row);
-    if (entireLine) {
-      const { padding } = morph;
-      startX = padding.left();
-      y = padding.top() + doc.computeVerticalOffsetOf(start.row);
-      endX = startX + line.width;
-      height = line.height;
-    } else {
-      ({ x: startX, y } = textLayout.boundsFor(morph, start));
-      ({ x: endX, height } = textLayout.boundsFor(morph, end));
-    }
-    height = Math.ceil(height);
-    const node = this.doc.createElement('div');
-    node.classList.add('newtext-marker-layer');
-    node.style.left = startX + 'px';
-    node.style.top = y + 'px';
-    node.style.height = height + 'px';
-    node.style.width = endX - startX + 'px';
-    for (const prop in style) {
-      node.style[prop] = style[prop];
-    }
-
-    return node;
+  patchMarkerLayer (node, morph) {
+    if (!node) return; // fixme
+    node.querySelectorAll('div.newtext-marker-layer').forEach(s => s.remove());
+    const nodeToAppendTo = morph.labelMode ? node : node.querySelectorAll('.scrollWrapper')[0];
+    nodeToAppendTo.append(...this.renderMarkerLayer(morph));
+    morph.renderingState.markers = morph.markers; // not yet working
   }
 
   /**
-   * @param {type} node - description
-   * @param {type} morph - description
-   * @param {Boolean} fromMorph - If this is true, we set the correct clipMode according to the Morph. Otherwise, we sett hidden.
+   * Updates the line height and/or letter spacing properties of a text morph.
+   * Takes care of also adjusting (rerendering) already visible parts.
+   * @param {Node} node - The node in which the text morph is rendered. 
+   * @param {TextMorph} morph 
+   */
+  patchLineHeightAndLetterSpacing (node, morph) {
+    node.querySelectorAll('.newtext-text-layer').forEach(node => {
+      if (morph.letterSpacing) node.style.letterSpacing = morph.letterSpacing;
+      else delete node.style.letteSpacing;
+      node.style.lineHeight = morph.lineHeight;
+    });
+    morph.document.lines.forEach(l => l.needsRerender = true);
+    this.renderTextAndAttributes(node, morph);
+    morph.renderingState.lineHeight = morph.lineHeight;
+    morph.renderingState.letterSpacing = morph.letterSpacing;
+  }
+
+  /**
+   * @see collectVisibleLinesForRendering
+   * @param {Node} node - DOM node of a text morph
+   * @param {Number} heightBefore - Height before the visible lines start in pixels.
+   */
+  updateFillerDIV (node, heightBefore) {
+    const textLayer = node.querySelector('.actual');
+    const filler = textLayer.querySelector('.newtext-before-filler');
+    if (filler) {
+      filler.style.height = heightBefore + 'px';
+    } else {
+      const spacer = this.doc.createElement('div');
+      spacer.classList.add('newtext-before-filler');
+      spacer.style.height = heightBefore + 'px';
+      textLayer.insertBefore(spacer, textLayer.firstChild);
+    }
+  }
+
+  /**
+   * @param {Node} node - DOM node in which a text morph is rendered. 
+   * @param {TextMorph} morph
+   */
+  adjustScrollLayerChildSize (node, morph) {
+    const scrollLayer = node.querySelectorAll('.scrollLayer')[0];
+    if (!scrollLayer) return;
+    const horizontalScrollBarVisible = morph.document.width > morph.width;
+    const scrollBarOffset = horizontalScrollBarVisible ? morph.scrollbarOffset : pt(0, 0);
+    const verticalPaddingOffset = morph.padding.top() + morph.padding.bottom();
+    scrollLayer.firstChild.style.width = Math.max(morph.document.width, morph.width) + 'px';
+    scrollLayer.firstChild.style.height = Math.max(morph.document.height, morph.height) - scrollBarOffset.y + verticalPaddingOffset + 'px';
+  }
+
+  /**
+   * Used to mirror the scroll state from the morphic model back into the DOM.
+   * @see updateNodeScrollFromMorph.
+   * @param {Node} node - Node of a TextMorph. 
+   * @param {TextMorph} morph
+   */
+  scrollScrollLayerFor (node, morph) {
+    const scrollWrapper = node.querySelectorAll('.scrollWrapper')[0];
+    if (!scrollWrapper) return;
+    scrollWrapper.style.transform = `translate(-${morph.scroll.x}px, -${morph.scroll.y}px)`;
+    morph.renderingState.scroll = morph.scroll;
+    this.renderTextAndAttributes(node, morph);
+  }
+
+  /**
+   * Updates the style of a text layer based on the style object of a text morph.
+   * The style object contains e.g. padding, fontWeigth, ...
+   * @see SmartText >> styleObject()
+   * @param {Node} node - DOM node in which a Text is rendered. 
+   * @param {TextMorph} morph - TextMorph of which the textLayer is to be updated.
+   * @param {Object} newStyle - Style Object which is to be applied to the text layer node.
+   */
+  patchTextLayerStyleObject (node, morph, newStyle) {
+    const textLayer = node.querySelector('.actual');
+    const fontMeasureTextLayer = node.querySelector('.font-measure');
+    stylepropsToNode(newStyle, textLayer);
+    stylepropsToNode(newStyle, fontMeasureTextLayer);
+    morph.renderingState.nodeStyleProps = newStyle;
+    morph.invalidateTextLayout(true, false);
+  }
+
+  /**
+   * Takes care of adjusting the relevant CSS classes after the lineWrapping property of a TextMorph was updated.
+   * @param {Node} node - The node which is used to render `morph`
+   * @param {TextMorph} morph - The textMorph for which lineWrapping was updated 
+   */
+  patchLineWrapping (node, morph) {
+    const oldWrappingClass = lineWrappingToClass(morph.renderingState.lineWrapping);
+    const newWrappingClass = morph.fixedWidth ? lineWrappingToClass(morph.lineWrapping) : lineWrappingToClass(false);
+
+    const textLayer = node.querySelector('.actual');
+    const fontMeasureTextLayer = node.querySelector('.font-measure');
+
+    textLayer.classList.remove(oldWrappingClass);
+    fontMeasureTextLayer.classList.remove(oldWrappingClass);
+
+    textLayer.classList.add(newWrappingClass);
+    fontMeasureTextLayer.classList.add(newWrappingClass);
+
+    morph.renderingState.lineWrapping = morph.lineWrapping;
+    morph.renderingState.fixedWidth = morph.fixedWidth;
+  }
+
+  /**
+   * Updates the clipMode of a TextMorph. Takes into account that we have decoupled the scroll from the node.
+   * @see renderScrollLayer.
+   * @param {Node} node - DOM node in which a TextMorph is rendered. 
+   * @param {TextMorph} morph - TextMorph of which the clipMode is to be updated.
+   * @param {scrollActive} fromMorph - If this is true, we set the correct clipMode according to the Morph. Otherwise, we set hidden.
    */
   patchClipModeForText (node, morph, scrollActive) {
     const scrollLayer = node.querySelectorAll('.scrollLayer')[0];
@@ -1329,96 +1553,44 @@ export default class Stage0Renderer {
   }
 
   /**
-   * Renders the layer comprising all the markers of the TextMorph.
-   * @param {Text} morph - The TextMorph owning the markers.
+   * Exchanges all nodes for the debug layer in the DOM. Actually deletes and recreates the nodes.
+   * @param {Node} node - The node of the text morph for which the debug layer is to be displayed.
+   * @param {TextMorph} morph - The morph for which the debug layer is to be displayed.
    */
-  renderMarkerLayer (morph) {
-    const {
-      markers,
-      viewState: { firstVisibleRow, lastVisibleRow }
-    } = morph;
-    const parts = [];
-
-    if (!markers) return parts;
-
-    for (const m of markers) {
-      const { style, range: { start, end } } = m;
-
-      if (end.row < firstVisibleRow || start.row > lastVisibleRow) continue;
-
-      // single line
-      if (start.row === end.row) {
-        parts.push(this.renderMarkerPart(morph, start, end, style));
-        continue;
-      }
-
-      // multiple lines
-      // first line
-      parts.push(this.renderMarkerPart(morph, start, morph.lineRange(start.row).end, style));
-      // lines in the middle
-      for (let row = start.row + 1; row <= end.row - 1; row++) {
-        const { start: lineStart, end: lineEnd } = morph.lineRange(row);
-        parts.push(this.renderMarkerPart(morph, lineStart, lineEnd, style, true));
-      }
-      // last line
-      parts.push(this.renderMarkerPart(morph, { row: end.row, column: 0 }, end, style));
-    }
-
-    return parts; // returns an array of nodes
-  }
-
-  patchMarkerLayer (node, morph) {
-    if (!node) return; // fixme
-    node.querySelectorAll('div.newtext-marker-layer').forEach(s => s.remove());
-    const nodeToAppendTo = morph.labelMode ? node : node.querySelectorAll('.scrollWrapper')[0];
-    nodeToAppendTo.append(...this.renderMarkerLayer(morph));
-    morph.renderingState.markers = morph.markers; // not yet working
+  updateDebugLayer (node, morph) {
+    const textNode = node.querySelector('.actual');
+    textNode.querySelectorAll('.debug-line, .debug-char, .debug-info').forEach(n => n.remove());
+    if (morph.debug) textNode.append(...this.renderDebugLayer(morph));
   }
 
   // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
   // TEXTRENDERING - MEASURING AFTER RENDER
   // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+  /**
+   * TODO: Is this nice? Shouldn't this just also use the fontmetric?
+   * Measures the bounds of `morph` in the DOM. Only used for label mode to enable autofit without more sophisticated measuring methods.
+   * @param {TextMorph} morph - A TextMorph in Label mode. 
+   * @returns {Rectangle} The actual bounds of `morph` when rendered into the DOM.
+   */
+  measureBoundsFor (morph) {
+    const node = this.getNodeForMorph(morph);
 
-  updateLineHeightOfNode (morph, docLine, lineNode) {
-    if (docLine.height === 0 || docLine.hasEstimatedExtent) {
-      const tfm = morph.getGlobalTransform().inverse();
-      tfm.e = tfm.f = 0;
+    const textNode = node.querySelector('.actual');
+    const prevParent = textNode.parentNode;
+    this.placeholder.appendChild(textNode);
+    const domMeasure = textNode.getBoundingClientRect();
+    const bounds = new Rectangle(domMeasure.x, domMeasure.y, domMeasure.width, domMeasure.height);
+    prevParent.appendChild(textNode);
 
-      const needsTransformAdjustment = tfm.getScale() !== 1 || tfm.getRotation() !== 0;
-      if (needsTransformAdjustment) lineNode.style.transform = tfm.toString();
-      const { height: nodeHeight, width: nodeWidth } = lineNode.getBoundingClientRect();
-      if (needsTransformAdjustment) lineNode.style.transform = '';
-
-      if (nodeHeight && nodeWidth && (docLine.height !== nodeHeight || docLine.width !== nodeWidth) &&
-         morph.fontMetric.isFontSupported(morph.fontFamily, morph.fontWeight)) {
-        // console.log(`[${docLine.row}] ${nodeHeight} vs ${docLine.height}`)
-        docLine.changeExtent(nodeWidth, nodeHeight, false);
-        morph.textLayout.resetLineCharBoundsCacheOfLine(docLine);
-        morph.viewState._needsFit = true; // is this still needed? what did it do?
-      }
-
-      // positions embedded morphs
-      if (docLine.textAndAttributes && docLine.textAndAttributes.length) {
-        let inlineMorph;
-        for (let j = 0, column = 0; j < docLine.textAndAttributes.length; j += 2) {
-          inlineMorph = docLine.textAndAttributes[j];
-          if (inlineMorph && inlineMorph.isMorph) {
-            morph._positioningSubmorph = inlineMorph;
-            inlineMorph.position = morph.textLayout.pixelPositionFor(morph, { row: docLine.row, column }).subPt(morph.origin);
-            inlineMorph._dirty = false; // no need to rerender
-            morph._positioningSubmorph = null;
-            column++;
-          } else if (inlineMorph) {
-            column += inlineMorph.length;
-          }
-        }
-      }
-
-      return nodeHeight;
-    }
-    return docLine.height;
+    return bounds;
   }
 
+  /**
+   * Iterates over the visible lines of a TextMorph, measures their bounds in the DOM and updates the data model in their Document.
+   * @see updateLineHeightOfNode.
+   * @param {Node} textlayerNode - The textLayerNode of a TextMorph.
+   * @param {TextMorph} morph - The TextMorph to which `textlayerNode` belongs. 
+   */
   updateExtentsOfLines (textlayerNode, morph) {
     // figure out what lines are displayed in the text layer node and map those
     // back to document lines.  Those are then updated via lineNode.getBoundingClientRect
@@ -1463,37 +1635,60 @@ export default class Stage0Renderer {
     }
   }
 
-  // -=-=-=-=-=-=-=-=-=-
-  // SVGs and Polygons
-  // -=-=-=-=-=-=-=-=-=-      
-  nodeForPath (morph) {
-    const node = this.doc.createElement('div');
-    applyAttributesToNode(morph, node);
+  /** 
+   * @param {TextMorph} morph 
+   * @param {Line} docLine
+   * @param {Node} lineNode - The Node in which `Line` is rendered. 
+   * @returns 
+   */
+  updateLineHeightOfNode (morph, docLine, lineNode) {
+    if (docLine.height === 0 || docLine.hasEstimatedExtent) {
+      const tfm = morph.getGlobalTransform().inverse();
+      tfm.e = tfm.f = 0;
 
-    const innerSvg = this.createSvgForPolygon();
-    const pathElem = this.doc.createElementNS(svgNs, 'path');
-    pathElem.setAttribute('id', 'svg' + morph.id);
-    const defNode = this.doc.createElementNS(svgNs, 'defs');
-    innerSvg.appendChild(pathElem);
-    innerSvg.appendChild(defNode);
+      const needsTransformAdjustment = tfm.getScale() !== 1 || tfm.getRotation() !== 0;
+      if (needsTransformAdjustment) lineNode.style.transform = tfm.toString();
+      const { height: nodeHeight, width: nodeWidth } = lineNode.getBoundingClientRect();
+      if (needsTransformAdjustment) lineNode.style.transform = '';
 
-    const outerSvg = this.createSvgForPolygon();
+      if (nodeHeight && nodeWidth && (docLine.height !== nodeHeight || docLine.width !== nodeWidth) &&
+         morph.fontMetric.isFontSupported(morph.fontFamily, morph.fontWeight)) {
+        // console.log(`[${docLine.row}] ${nodeHeight} vs ${docLine.height}`)
+        docLine.changeExtent(nodeWidth, nodeHeight, false);
+        morph.textLayout.resetLineCharBoundsCacheOfLine(docLine);
+        morph.viewState._needsFit = true; // is this still needed? what did it do?
+      }
 
-    node.appendChild(innerSvg);
-    node.appendChild(outerSvg);
-    return node;
-  }
+      // positions embedded morphs
+      if (docLine.textAndAttributes && docLine.textAndAttributes.length) {
+        let inlineMorph;
+        for (let j = 0, column = 0; j < docLine.textAndAttributes.length; j += 2) {
+          inlineMorph = docLine.textAndAttributes[j];
+          if (inlineMorph && inlineMorph.isMorph) {
+            morph._positioningSubmorph = inlineMorph;
+            inlineMorph.position = morph.textLayout.pixelPositionFor(morph, { row: docLine.row, column }).subPt(morph.origin);
+            inlineMorph._dirty = false; // no need to rerender
+            morph._positioningSubmorph = null;
+            column++;
+          } else if (inlineMorph) {
+            column += inlineMorph.length;
+          }
+        }
+      }
 
-  createSvgForPolygon () {
-    const elem = this.doc.createElementNS(svgNs, 'svg');
-    elem.style.position = 'absolute';
-    elem.style.overflow = 'visible';
-    return elem;
+      return nodeHeight;
+    }
+    return docLine.height;
   }
 
   // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
   // DYNAMICALLY RENDER POLYGON PROPS
   // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+  /**
+   * This and all following methods with regards to Paths/Polygons/SVGs always assume that the Morph has been rendered in its structure.
+   * These methods thus only take the already existing node and modify it so that some morphic properties are reflected correctly.
+   * @param {Path} morph 
+   */
   renderControlPoints (morph) {
     let controlPoints = [];
     // TODO: This can and should be optimized, since live manipulation of a Path is super slow at the moment.
