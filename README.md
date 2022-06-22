@@ -45,7 +45,7 @@ Morphs can implement the following methods to customize their rendering:
 
 ### Rendering loop
 
-The core rendering logic is implemented in the `Renderer` class in `lively.morphic`. When a world is loaded (`loadWorld()` in `lively.morphic/world-loading.js`) a Renderer is installed by calling `setWorld()` on the morphic environment.
+The core rendering logic is implemented in the `Renderer` class in `lively.morphic`. When a world is loaded (`loadWorld()` in `lively.morphic/world-loading.js`) a Renderer is installed by calling `setWorld()` on the morphic environment. From `setWorld()`: `this.renderer ? this.renderer.rootNode : this.domEnv.document.body`.
 
 In its constructor, `requestAnimationFrame` is installed on the renderer from the `window` such that `window` is bound to `this` inside of `renderer.requestAnimationFrame`.
 
@@ -62,7 +62,10 @@ Thus, to render the world, the following steps are necessary:
 3. Diff the old version of the tree and and the new version, generating a set of patches.
 4. Patch the actual DOM, resulting in new vdom and actual DOM being consistent.
 
-**Open Question: `renderRootMorph()` separately calls `renderFixedMorphs` -- why are those handled separately?**
+#### rendering of fixed Morphs
+
+Fixed Morphs have a set position ("on the screen") and do not scroll with a world larger than the screen. E.g. side-bar flaps.
+Only direct submorphs of the world can be rendered as fixed, for other morphs the `hasFixedPosition` flag has no purpose.
 
 ### renderer.render(morph)
 
