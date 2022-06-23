@@ -1,7 +1,7 @@
 import { applyAttributesToNode, lineWrappingToClass, stylepropsToNode, applyStylingToNode } from './helpers.js';
 import { withoutAll } from 'lively.lang/array.js';
 import { arr, num, obj } from 'lively.lang';
-import { getSvgVertices } from 'lively.morphic/rendering/property-dom-mapping.js';
+import { getSvgVertices, canBePromotedToCompositionLayer } from 'lively.morphic/rendering/property-dom-mapping.js';
 import { setCSSDef } from 'lively.morphic/rendering/dom-helper.js';
 import { cssForTexts } from './css-decls.js';
 import { Rectangle, pt } from 'lively.graphics';
@@ -20,19 +20,29 @@ export default class Stage0Renderer {
   // -=-=-=-
   // SETUP
   // -=-=-=-
-  constructor (owningMorph) {
+
+  /**
+   * description
+   * @param {type} owningMorph - description
+   * @param {type} rootNode - Parentnode of the node that the world gets rendered into
+   * rootNode will later be used for easier integration into the normal render flow
+   */
+  constructor (owningMorph /* like world in the actual renderer I think */, rootNode) {
     this.owner = owningMorph;
+    this.owner.renderingState.renderedFixedMorphs = [];
     this.renderMap = new WeakMap();
     this.morphsWithStructuralChanges = [];
     this.renderedMorphsWithChanges = [];
     this.renderedMorphsWithAnimations = [];
     this.doc = owningMorph.env.domEnv.document;
+    this.bodyNode = this.doc.createElement('div');
     this.rootNode = this.doc.createElement('div');
     this.rootNode.setAttribute('id', 'stage0root');
     this.renderMap.set(this.owner, this.rootNode);
     this.installTextCSS();
     this.installPlaceholder();
     window.stage0renderer = this;
+    this.bodyNode.appendChild(this.rootNode);
   }
 
   installPlaceholder () {
@@ -73,6 +83,8 @@ export default class Stage0Renderer {
 
     const morphsToHandle = this.owner.withAllSubmorphsDo(m => m);
 
+    this.renderFixedMorphs();
+
     // Handling these first allows us to assume correct wrapping, when we have submorphs already!
     for (let morph of morphsToHandle) {
       if (morph.renderingState.hasCSSLayoutChange) this.renderLayoutChange(morph);
@@ -110,7 +122,43 @@ export default class Stage0Renderer {
     }
     // This is only necessary while we are the "guest-renderer", can be removed once we actually migrate
     this.owner.makeDirty();
-    return this.rootNode;
+    return this.bodyNode;
+  }
+
+  renderFixedMorphs () {
+    const fixedSubmorphs = this.owner.submorphs.filter(s => s.hasFixedPosition);
+
+    const beforeElem = Array.from(this.bodyNode.children).find(n => n.id === 'stage0root');
+    keyed('id',
+      this.bodyNode,
+      this.owner.renderingState.renderedFixedMorphs,
+      fixedSubmorphs,
+      item => this.renderAsFixed(item),
+      noOpUpdate,
+      beforeElem, // before elem
+      undefined// after elem
+    );
+    fixedSubmorphs.forEach(s => {
+      s.renderingState.needsRerender = false;
+      this.updateNodeScrollFromMorph(s);
+    });
+    this.owner.renderingState.renderedFixedMorphs = fixedSubmorphs;
+  }
+
+  renderAsFixed (morph) {
+    const node = this.renderMorph(morph);
+    if (!morph.isHTMLMorph) { node.style.position = 'fixed'; }
+    // in case this world is embedded, we need to add the offset of the world morph here
+    if (this.owner.isEmbedded) {
+      const bbx = this.bodyNode.getBoundingClientRect();
+      const { origin, owner, position } = morph;
+      const x = Math.round(position.x - origin.x - (morph._skipWrapping && owner ? owner.borderWidthLeft : 0));
+      const y = Math.round(position.y - origin.y - (morph._skipWrapping && owner ? owner.borderWidthTop : 0));
+      const { x: left, y: top } = canBePromotedToCompositionLayer(morph) ? pt(0, 0) : pt(x, y);
+      node.style.top = top + bbx.y + 'px';
+      node.style.left = left + bbx.x + 'px';
+    }
+    return node;
   }
 
   // -=-=-=-=-=-=-=-=-=-=-=-=-=-
