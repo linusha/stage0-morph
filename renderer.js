@@ -1,3 +1,4 @@
+/* global addOrChangeCSSDeclaration */
 import { applyAttributesToNode, lineWrappingToClass, stylepropsToNode, applyStylingToNode } from './helpers.js';
 import { withoutAll } from 'lively.lang/array.js';
 import { arr, num, obj } from 'lively.lang';
@@ -9,6 +10,9 @@ import { objectReplacementChar } from 'lively.morphic/text/document.js';
 
 import { keyed, noOpUpdate } from './keyed.js';
 import { StatusMessageError } from 'lively.halos/components/messages.cp.js';
+import promise from 'lively.lang/promise.js';
+import { defaultCSS } from 'lively.morphic/rendering/morphic-default.js';
+import { addOrChangeLinkedCSS, config } from 'lively.morphic';
 
 const svgNs = 'http://www.w3.org/2000/svg';
 
@@ -24,27 +28,94 @@ export default class Stage0Renderer {
   /**
    * description
    * @param {type} owningMorph - description
-   * @param {type} rootNode - Parentnode of the node that the world gets rendered into
+   * @param {Node} rootNode - Parentnode of the node that the world gets rendered into
+   * @param {type} domEnvironment - 
    * rootNode will later be used for easier integration into the normal render flow
    */
-  constructor (owningMorph /* like world in the actual renderer I think */, rootNode) {
-    this.owner = owningMorph;
-    this.owner.renderingState.renderedFixedMorphs = [];
+  constructor (world /* like world in the actual renderer I think */, rootNode, domEnvironment) {
+    if (!world || !world.isMorph) { throw new Error(`Trying to initialize renderer with an invalid world morph: ${world}`); }
+    if (!rootNode || !('nodeType' in rootNode)) { throw new Error(`Trying to initialize renderer with an invalid root node: ${rootNode}`); }
+
+    this.worldMorph = world;
+    this.worldMorph.renderingState.renderedFixedMorphs = [];
     this.renderMap = new WeakMap();
     this.morphsWithStructuralChanges = [];
     this.renderedMorphsWithChanges = [];
     this.renderedMorphsWithAnimations = [];
-    this.doc = owningMorph.env.domEnv.document;
-    this.bodyNode = this.doc.createElement('div');
+    this.doc = world.env.domEnv.document;
+    this.bodyNode = rootNode;
     this.rootNode = this.doc.createElement('div');
     this.rootNode.setAttribute('id', 'stage0root');
-    this.renderMap.set(this.owner, this.rootNode);
+    this.renderMap.set(this.worldMorph, this.rootNode);
     this.installTextCSS();
     this.installPlaceholder();
     window.stage0renderer = this;
+    this.domEnvironment = domEnvironment;
     this.bodyNode.appendChild(this.rootNode);
+    world._renderer = this;
+    this.requestAnimationFrame = domEnvironment.window.requestAnimationFrame.bind(domEnvironment.window);
+
   }
 
+  async clear () {
+    const domNode = this.domNode;
+    try {
+      await this.stopRenderWorldLoop();
+    } catch (err) {
+
+    }
+    if (domNode) {
+      const parent = domNode.parentNode;
+      const domNodeIndex = Array.from(parent.children).findIndex(n => n === domNode);
+
+      for (let i = domNodeIndex; i < parent.children.length; i++) {
+        parent.children[i].remove();
+      }
+    }
+    this.domNode = null;
+    this.emptyRenderQueues();
+    this.renderMap = new WeakMap();
+  }
+
+  startRenderWorldLoop () {
+    this._stopped = false;
+    this._renderWorldLoopLater = null;
+    // request animation frame returns a request ID as a long value
+    // we store it, to be able to later on cancel the scheduled animations in `stpopRenderWorldLoop()`
+    this.renderWorldLoopProcess = this.requestAnimationFrame(() => this.startRenderWorldLoop());
+    return this.renderStep();
+  }
+
+  async stopRenderWorldLoop () {
+    this._stopped = true;
+    this.domEnvironment.window.cancelAnimationFrame(this.renderWorldLoopProcess);
+    this.renderWorldLoopProcess = null;
+    this.domEnvironment.window.cancelAnimationFrame(this.renderWorldLoopLater);
+    this.renderWorldLoopLater = null;
+    await promise.waitFor(2000, () => !this.worldMorph.needsRerender());
+  }
+
+  renderLater (n = 10) {
+    this.renderWorldLoopLaterCounter = n;
+    if (this.renderWorldLoopLater || this._stopped) return;
+    this.renderWorldLoopLater = this.requestAnimationFrame(() => {
+      this.renderWorldLoopLater = null;
+      if (this.renderWorldLoopLaterCounter > 0) { this.renderLater(this.renderWorldLoopLaterCounter - 1); }
+      try { this.renderStep(); } catch (err) {
+        console.error('Error rendering morphs:', err);
+      }
+    });
+  }
+
+  renderStep () {
+    this.renderWorld();
+    return this;
+  }
+
+  /**
+   * Placeholder currently used for measuring the bounds of TextMorph in Label mode.
+   * @returns {Node} The node in which the nodes to be measured can be mounted.
+   */
   installPlaceholder () {
     this.placeholder = this.placeholder || this.doc.getElementById('placeholder');
 
@@ -59,6 +130,7 @@ export default class Stage0Renderer {
     this.placeholder = this.doc.body.appendChild(placeholder);
   }
 
+  // TODO: Clean up and consolidate CSS creation methods
   installTextCSS () {
     const style = document.createElement('style');
     style.type = 'text/css';
@@ -70,6 +142,16 @@ export default class Stage0Renderer {
     return style;
   }
 
+  ensureDefaultCSS () {
+    const fm = this.worldMorph.env.fontMetric;
+    return promise.waitFor(3000, () => this.domNode.getRootNode())
+      .then(doc => Promise.all([
+        addOrChangeCSSDeclaration('lively-morphic-css', defaultCSS, doc),
+        promise.waitFor(1000, () => fm.isFontSupported('IBM Plex Sans') && fm.isFontSupported('IBM Plex Mono'), false).then((isSupported) => !isSupported && addOrChangeLinkedCSS('lively-ibm-plex', config.css.ibmPlex)), // those are many files, is there a smaller one?
+        addOrChangeLinkedCSS('lively-font-awesome', config.css.fontAwesome, doc, false),
+        addOrChangeLinkedCSS('lively-font-inconsolata', config.css.inconsolata, doc, false)]));
+  }
+
   // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
   //  HIGHER LEVEL RENDERING FUNCTIONS
   // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
@@ -79,9 +161,9 @@ export default class Stage0Renderer {
    */
   renderWorld () {
     this.emptyRenderQueues();
-    this.owner.applyLayoutIfNeeded(); // cascades through all submorphs and applies the javascript layouts
+    this.worldMorph.applyLayoutIfNeeded(); // cascades through all submorphs and applies the javascript layouts
 
-    const morphsToHandle = this.owner.withAllSubmorphsDo(m => m);
+    const morphsToHandle = this.worldMorph.withAllSubmorphsDo(m => m);
 
     this.renderFixedMorphs();
 
@@ -94,7 +176,7 @@ export default class Stage0Renderer {
       if (morph.renderingState.hasStructuralChanges) this.morphsWithStructuralChanges.push(morph);
       // For inline morphs, trigger updating of line
       if (morph.renderingState.needsRerender && morph._isInline) {
-        this.renderedMorphsWithChanges.push(morph.ownerChain().find(m => m.isSmartText));
+        this.renderedMorphsWithChanges.push(morph.worldMorphChain().find(m => m.isSmartText));
       }
       if (morph.renderingState.needsRerender && !morph._isInline) this.renderedMorphsWithChanges.push(morph);
       if (morph.renderingState.animationAdded) this.renderedMorphsWithAnimations.push(morph);
@@ -121,17 +203,17 @@ export default class Stage0Renderer {
       morph.renderingState.animationAdded = false;
     }
     // This is only necessary while we are the "guest-renderer", can be removed once we actually migrate
-    this.owner.makeDirty();
+    this.worldMorph.makeDirty();
     return this.bodyNode;
   }
 
   renderFixedMorphs () {
-    const fixedSubmorphs = this.owner.submorphs.filter(s => s.hasFixedPosition);
+    const fixedSubmorphs = this.worldMorph.submorphs.filter(s => s.hasFixedPosition);
 
     const beforeElem = Array.from(this.bodyNode.children).find(n => n.id === 'stage0root');
     keyed('id',
       this.bodyNode,
-      this.owner.renderingState.renderedFixedMorphs,
+      this.worldMorph.renderingState.renderedFixedMorphs,
       fixedSubmorphs,
       item => this.renderAsFixed(item),
       noOpUpdate,
@@ -142,18 +224,18 @@ export default class Stage0Renderer {
       s.renderingState.needsRerender = false;
       this.updateNodeScrollFromMorph(s);
     });
-    this.owner.renderingState.renderedFixedMorphs = fixedSubmorphs;
+    this.worldMorph.renderingState.renderedFixedMorphs = fixedSubmorphs;
   }
 
   renderAsFixed (morph) {
     const node = this.renderMorph(morph);
     if (!morph.isHTMLMorph) { node.style.position = 'fixed'; }
     // in case this world is embedded, we need to add the offset of the world morph here
-    if (this.owner.isEmbedded) {
+    if (this.worldMorph.isEmbedded) {
       const bbx = this.bodyNode.getBoundingClientRect();
-      const { origin, owner, position } = morph;
-      const x = Math.round(position.x - origin.x - (morph._skipWrapping && owner ? owner.borderWidthLeft : 0));
-      const y = Math.round(position.y - origin.y - (morph._skipWrapping && owner ? owner.borderWidthTop : 0));
+      const { origin, worldMorph, position } = morph;
+      const x = Math.round(position.x - origin.x - (morph._skipWrapping && worldMorph ? worldMorph.borderWidthLeft : 0));
+      const y = Math.round(position.y - origin.y - (morph._skipWrapping && worldMorph ? worldMorph.borderWidthTop : 0));
       const { x: left, y: top } = canBePromotedToCompositionLayer(morph) ? pt(0, 0) : pt(x, y);
       node.style.top = top + bbx.y + 'px';
       node.style.left = left + bbx.x + 'px';
