@@ -9,7 +9,6 @@ import { Rectangle, pt } from 'lively.graphics';
 import { objectReplacementChar } from 'lively.morphic/text/document.js';
 
 import { keyed, noOpUpdate } from './keyed.js';
-import { StatusMessageError } from 'lively.halos/components/messages.cp.js';
 import promise from 'lively.lang/promise.js';
 import { defaultCSS } from 'lively.morphic/rendering/morphic-default.js';
 import { addOrChangeLinkedCSS, config } from 'lively.morphic';
@@ -439,7 +438,7 @@ export default class Stage0Renderer {
       if (skipWrapping) {
         // TODO: talk about this from a conceptual point of view with robin
         // TODO: this is not enough to enforce that the problematic aspect of this (i.e. adding a layout ONTO a text morph) does not occur 
-        $world.setStatusMessage('Not supported for SmartText', StatusMessageError);
+        $world.setStatusMessage('Not supported for SmartText');
       } else {
         this.installWrapperNodeFor(morph, node);
         keyed('id',
