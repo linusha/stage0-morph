@@ -44,7 +44,7 @@ export default class Stage0Renderer {
     this.doc = world.env.domEnv.document;
     this.bodyNode = rootNode;
     this.rootNode = this.doc.createElement('div');
-    this.rootNode.setAttribute('id', 'stage0root');
+    this.rootNode.setAttribute('id', this.worldMorph.id);
     this.renderMap.set(this.worldMorph, this.rootNode);
     this.installTextCSS();
     this.installPlaceholder();
@@ -208,8 +208,7 @@ export default class Stage0Renderer {
 
   renderFixedMorphs () {
     const fixedSubmorphs = this.worldMorph.submorphs.filter(s => s.hasFixedPosition);
-
-    const beforeElem = Array.from(this.bodyNode.children).find(n => n.id === 'stage0root');
+    const beforeElem = Array.from(this.bodyNode.children).find(n => n.id === this.worldMorph.id);
     keyed('id',
       this.bodyNode,
       this.worldMorph.renderingState.renderedFixedMorphs,
