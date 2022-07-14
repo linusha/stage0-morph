@@ -266,18 +266,7 @@ export default class Stage0Renderer {
       this.installWrapperNodeFor(morph, node);
     }
 
-    for (let submorph of morph.submorphs) {
-      const submorphNode = this.renderMorph(submorph);
-      if (skipWrapping) {
-        if (!morph.isPath) node.appendChild(submorphNode);
-        else node.insertBefore(submorphNode, node.lastChild);
-      } else { // do not skip wrapping
-        if (!morph.isPath) node.firstChild.appendChild(submorphNode);
-        else node.firstChild.nextSibling.appendChild(submorphNode);
-      }
-      morph.renderingState.renderedMorphs.push(submorph);
-    }
-
+    morph.renderingState.hasStructuralChanges = true;
     return node;
   }
 
