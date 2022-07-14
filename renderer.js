@@ -76,15 +76,6 @@ export default class Stage0Renderer {
     this.renderMap = new WeakMap();
   }
 
-  startRenderWorldLoop () {
-    this._stopped = false;
-    this._renderWorldLoopLater = null;
-    // request animation frame returns a request ID as a long value
-    // we store it, to be able to later on cancel the scheduled animations in `stpopRenderWorldLoop()`
-    this.renderWorldLoopProcess = this.requestAnimationFrame(() => this.startRenderWorldLoop());
-    return this.renderStep();
-  }
-
   async stopRenderWorldLoop () {
     this._stopped = true;
     this.domEnvironment.window.cancelAnimationFrame(this.renderWorldLoopProcess);
