@@ -181,7 +181,15 @@ export default class Stage0Renderer {
     }
 
     for (let morph of this.renderedMorphsWithAnimations) {
-      const node = this.getNodeForMorph(morph);
+      this.handleAddedAnimationChange(morph);
+    }
+    // This is only necessary while we are the "guest-renderer", can be removed once we actually migrate
+    this.worldMorph.makeDirty();
+    return this.bodyNode;
+  }
+
+  handleAddedAnimationChange(morph){
+    const node = this.getNodeForMorph(morph);
 
       if (morph.isPath) {
         const svgNode = node.firstChild;
@@ -191,10 +199,6 @@ export default class Stage0Renderer {
 
       morph._animationQueue.startAnimationsFor(node);
       morph.renderingState.animationAdded = false;
-    }
-    // This is only necessary while we are the "guest-renderer", can be removed once we actually migrate
-    this.worldMorph.makeDirty();
-    return this.bodyNode;
   }
 
   renderFixedMorphs () {
