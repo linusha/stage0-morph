@@ -45,6 +45,7 @@ export default class Stage0Renderer {
     this.bodyNode = rootNode;
     this.rootNode = this.doc.createElement('div');
     this.rootNode.setAttribute('id', this.worldMorph.id);
+    this.rootNode.classList.add("LivelyWorld", "World", "Morph", "morph");
     this.renderMap.set(this.worldMorph, this.rootNode);
     this.installTextCSS();
     this.installPlaceholder();
