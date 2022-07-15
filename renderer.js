@@ -375,13 +375,16 @@ export default class Stage0Renderer {
     const node = this.getNodeForMorph(morph);
 
     let submorphsToRender = morph.submorphs;
+    if (morph.isWorld){
+      submorphsToRender = morph.submorphs.filter(sm => !sm.hasFixedPosition)
+    }
     // these embedded morphs are not really submorphs, but only for a really short time
     submorphsToRender = submorphsToRender.filter(sm => !sm._isInline);
 
     // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
     // Optimization for when a morph has no longer any submorphs.
     // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-    if (morph.submorphs.filter(sm => !sm._isInline).length === 0) {
+    if (submorphsToRender.length === 0) {
       if (morph.isPath) {
         // two SVG nodes are necessary
         // remove everything else, in the case that we have unwrapped submorph nodes
@@ -398,13 +401,17 @@ export default class Stage0Renderer {
       } else {
         node.replaceChildren();
       }
-      morph.renderingState.renderedMorphs = morph.submorphs.slice();
+      morph.renderingState.renderedMorphs = [];                                                                                                                            
       morph.renderingState.hasStructuralChanges = false;
       return;
     }
     // Due to the early return, we know that we have submorphs here.
-    const alreadyRenderedSubmorphs = morph.renderingState.renderedMorphs;
-    const newlyRenderedSubmorphs = withoutAll(submorphsToRender, alreadyRenderedSubmorphs);
+    let alreadyRenderedSubmorphs = morph.renderingState.renderedMorphs;
+    let newlyRenderedSubmorphs = withoutAll(submorphsToRender, alreadyRenderedSubmorphs);
+    if (morph.isWorld) {
+      alreadyRenderedSubmorphs = withoutAll(alreadyRenderedSubmorphs, morph.renderingState.renderedFixedMorphs);
+      newlyRenderedSubmorphs = withoutAll(newlyRenderedSubmorphs, morph.renderingState.renderedFixedMorphs);
+    }
 
     let skipWrapping = morph.layout && morph.layout.renderViaCSS;
     if (morph.isPath) {
@@ -416,8 +423,8 @@ export default class Stage0Renderer {
           submorphsToRender,
           item => this.renderMorph(item),
           noOpUpdate,
-          firstSvg, // before list
-          secondSvg// after list
+          firstSvg, // before elem
+          secondSvg// after elem
         );
       } else {
         this.installWrapperNodeFor(morph, node);
@@ -481,7 +488,9 @@ export default class Stage0Renderer {
       // submorph.afterRenderHook(node);
     } */
 
-    morph.renderingState.renderedMorphs = morph.submorphs.slice();
+    submorphsToRender.forEach(m => {
+      arr.pushIfNotIncluded(morph.renderingState.renderedMorphs, m)
+    })
     morph.renderingState.hasStructuralChanges = false;
   }
 
