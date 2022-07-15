@@ -1803,6 +1803,33 @@ export default class Stage0Renderer {
     return docLine.height;
   }
 
+  // -=-=-=-=-=-=-=-=-=-
+  // TEXT MORPH HELPERS
+  // -=-=-=-=-=-=-=-=-=-
+
+  extractHTMLFromTextMorph (textMorph, textAndAttributes = textMorph.textAndAttributesInRange(textMorph.selection.range)) {
+    // const text = new textMorph.constructor({
+    //  ...textMorph.defaultTextStyle,
+    //  width: textMorph.width,
+    //  textAndAttributes: textAndAttributes
+    // });
+    // const render = text.textRenderer.directRenderTextLayerFn(text);
+    // const renderLine = text.textRenderer.directRenderLineFn(text);
+    // const textLayerNode = render();
+    // const style = System.global && System.global.getComputedStyle ? System.global.getComputedStyle(textLayerNode) : null;
+    // if (style) {
+    //  textLayerNode.ownerDocument.body.appendChild(textLayerNode);
+    //  textLayerNode.style.whiteSpace = style.whiteSpace;
+    //  textLayerNode.style.overflowWrap = style.overflowWrap;
+    //  textLayerNode.style.wordBreak = style.wordBreak;
+    //  textLayerNode.style.minWidth = style.minWidth;
+    //  textLayerNode.parentNode.removeChild(textLayerNode);
+    // }
+    // for (const line of text.document.lines) { textLayerNode.appendChild(renderLine(line)); }
+    // return textLayerNode.outerHTML;
+    console.warn('`extractHTMLFromTextMorph` is not yet implemented!');
+  }
+
   // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
   // DYNAMICALLY RENDER POLYGON PROPS
   // -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
