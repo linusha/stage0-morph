@@ -212,10 +212,9 @@ export default class Stage0Renderer {
       item => this.renderAsFixed(item),
       noOpUpdate,
       beforeElem, // before elem
-      undefined// after elem
+      undefined // after elem
     );
     fixedSubmorphs.forEach(s => {
-      s.renderingState.needsRerender = false;
       this.updateNodeScrollFromMorph(s);
     });
     this.worldMorph.renderingState.renderedFixedMorphs = fixedSubmorphs;
