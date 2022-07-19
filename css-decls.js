@@ -30,7 +30,7 @@ export const cssForTexts = `
     /*-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-*/
     /* text layer / content */
     .font-measure {
-      visibility: 'hidden';
+      visibility: hidden;
     }
 
     .newtext-text-layer {
