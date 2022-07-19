@@ -480,6 +480,8 @@ export default class Stage0Renderer {
     submorphsToRender.forEach(m => {
       arr.pushIfNotIncluded(morph.renderingState.renderedMorphs, m)
     })
+    
+    morph.renderingState.renderedMorphs = arr.intersect(morph.renderingState.renderedMorphs, morph.submorphs);
     morph.renderingState.hasStructuralChanges = false;
   }
 
