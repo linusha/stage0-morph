@@ -6,7 +6,7 @@ import { getSvgVertices, canBePromotedToCompositionLayer } from 'lively.morphic/
 import { setCSSDef } from 'lively.morphic/rendering/dom-helper.js';
 import { cssForTexts } from './css-decls.js';
 import { Rectangle, pt } from 'lively.graphics';
-import { objectReplacementChar } from 'lively.morphic/text/document.js';
+import { objectReplacementChar } from 'lively.morphic/text/new-document.js';
 
 import { keyed, noOpUpdate } from './keyed.js';
 import promise from 'lively.lang/promise.js';
