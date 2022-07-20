@@ -167,7 +167,7 @@ export default class Stage0Renderer {
       if (morph.renderingState.hasStructuralChanges) this.morphsWithStructuralChanges.push(morph);
       // For inline morphs, trigger updating of line
       if (morph.renderingState.needsRerender && morph._isInline) {
-        this.renderedMorphsWithChanges.push(morph.worldMorphChain().find(m => m.isSmartText));
+        this.renderedMorphsWithChanges.push(morph.ownerChain().find(m => m.isSmartText));
       }
       if (morph.renderingState.needsRerender && !morph._isInline) this.renderedMorphsWithChanges.push(morph);
       if (morph.renderingState.animationAdded) this.renderedMorphsWithAnimations.push(morph);
