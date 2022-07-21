@@ -35,6 +35,11 @@ export default class Stage0Renderer {
     if (!world || !world.isMorph) { throw new Error(`Trying to initialize renderer with an invalid world morph: ${world}`); }
     if (!rootNode || !('nodeType' in rootNode)) { throw new Error(`Trying to initialize renderer with an invalid root node: ${rootNode}`); }
 
+    if (!domEnvironment) {
+      const doc = rootNode.getRootNode();
+      domEnvironment = { window: System.global, document: doc };
+    }
+
     this.worldMorph = world;
     this.worldMorph.renderingState.renderedFixedMorphs = [];
     this.renderMap = new WeakMap();
