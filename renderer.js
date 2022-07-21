@@ -522,6 +522,7 @@ export default class Stage0Renderer {
     // fixme: hackz
     if (morph.isSmartText && !morph.labelMode) node.style.overflow = 'hidden';
     // TODO: this needs to call the after render hooks later on
+    morph._dirty = false;
     morph.renderingState.needsRerender = false;
   }
 
