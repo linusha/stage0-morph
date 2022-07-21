@@ -1697,7 +1697,7 @@ export default class Stage0Renderer {
    */
   measureBoundsFor (morph) {
     const node = this.getNodeForMorph(morph);
-
+    if (!node) return Rectangle.inset(0);
     const textNode = node.querySelector('.actual');
     const prevParent = textNode.parentNode;
     this.placeholder.appendChild(textNode);
