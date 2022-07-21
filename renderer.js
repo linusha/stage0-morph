@@ -226,6 +226,10 @@ export default class Stage0Renderer {
   }
 
   renderAsFixed (morph) {
+    morph.withAllSubmorphsDo(sm => {
+      // TODO: hack that compensates a problem with updating renderedLines
+      if (sm.renderingState.renderedLines) sm.renderingState.renderedLines = [];
+    })
     const node = this.renderMorph(morph);
     if (!morph.isHTMLMorph) { node.style.position = 'fixed'; }
     // in case this world is embedded, we need to add the offset of the world morph here
@@ -1502,6 +1506,16 @@ export default class Stage0Renderer {
       if (morph.debug) textNode.querySelectorAll('.debug-line, .debug-char, .debug-info').forEach(n => n.remove());
       const linesToRender = this.collectVisibleLinesForRendering(morph, node);
       morph.viewState.visibleLines = linesToRender;
+      // FIXME: hack that compensates for errornous content in renderingState.renderedLines
+      const renderedLinesFromDOM = [];
+      textNode.childNodes.forEach(node => {
+        if (!node.classList.contains('line')) return;
+        const ds = node.dataset;
+        const row = Number(ds ? ds.row : node.getAttribute('data-row'));
+        const line = morph.document.lines[row];
+        renderedLinesFromDOM.push(line)
+      })
+      morph.renderingState.renderedLines = renderedLinesFromDOM;
       keyed('row',
         textNode,
         morph.renderingState.renderedLines,
