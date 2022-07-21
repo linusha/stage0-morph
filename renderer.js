@@ -290,7 +290,12 @@ export default class Stage0Renderer {
     const wrapped = node.querySelector(`#submorphs-${morph.id}`);
     if (!wrapped) {
       if (morph.isSmartText) {
-        const scrollWrapper = node.querySelector('.scrollWrapper');
+        let scrollWrapper = node.querySelector('.scrollWrapper');
+        if (!scrollWrapper){
+          morph.renderingState.needsScrollLayerAdded = true;
+          this.handleScrollLayer(node, morph);
+          scrollWrapper = node.querySelector('.scrollWrapper')
+        }
         scrollWrapper.appendChild(wrapperNode);
       } else if (!morph.isPath) node.appendChild(wrapperNode); // normal morphs
       else node.insertBefore(wrapperNode, node.lastChild); // path
