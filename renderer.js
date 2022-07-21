@@ -473,7 +473,7 @@ export default class Stage0Renderer {
     // When a node get removed/added to the DOM its scollTop/scrollLeft values are reset.
     // We fix those up here.
     for (let morph of newlyRenderedSubmorphs) {
-      morph.withAllSubmorphsDo(m => this.updateNodeScrollFromMorph(m));
+      this.updateNodeScrollFromMorph(morph);
     }
 
     // TODO: migrate actual hook over
