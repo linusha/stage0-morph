@@ -846,6 +846,7 @@ export default class Stage0Renderer {
    * @returns {Node} The DOM node for the line (`DIV`).
    */
   nodeForLine (lineObject, morph, isRealRender = false) {
+    if (lineObject === null) lineObject = '';
     const line = lineObject.isLine ? lineObject.textAndAttributes : lineObject;
     const size = line.length;
 
@@ -923,9 +924,6 @@ export default class Stage0Renderer {
         if (verticalAlign) chunkNodeStyle.verticalAlign = verticalAlign;
         if (textStroke) chunkNodeStyle['-webkit-text-stroke'] = textStroke;
         if (attributes.doit) { chunkNodeStyle.pointerEvents = 'auto'; chunkNodeStyle.cursor = 'pointer'; }
-
-        textStyleClasses = attributes.textStyleClasses;
-        if (textStyleClasses && textStyleClasses.length) { nodeAttrs.className = textStyleClasses.join(' '); }
 
         const chunkNode = this.doc.createElement(tagname);
         chunkNode.textContent = content;
