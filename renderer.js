@@ -939,6 +939,7 @@ export default class Stage0Renderer {
         chunkNode.textContent = content;
         if (chunkNodeAttributes.href) chunkNode.href = chunkNodeAttributes.href;
         if (chunkNodeAttributes.target) chunkNode.target = chunkNodeAttributes.target;
+        if (textStyleClasses && textStyleClasses.length) { chunkNode.className = textStyleClasses.join(' '); }
         stylepropsToNode(chunkNodeStyle, chunkNode);
         renderedChunks.push(chunkNode);
       }
