@@ -515,6 +515,7 @@ export default class Stage0Renderer {
    * @param { Morph } morph - The morph for which to update the rendering.
    */
   renderStylingChanges (morph) {
+    morph.renderingState.needsRemeasure = true;
     const node = this.getNodeForMorph(morph);
 
     if (morph.patchSpecialProps) {
@@ -1724,6 +1725,7 @@ export default class Stage0Renderer {
    * @returns {Rectangle} The actual bounds of `morph` when rendered into the DOM.
    */
   measureBoundsFor (morph) {
+    if (!morph.renderingState.needsRemeasure) return morph._cachedBounds;
     const node = this.getNodeForMorph(morph);
     if (!node) return Rectangle.inset(0);
     const textNode = node.querySelector('.actual');
@@ -1733,6 +1735,8 @@ export default class Stage0Renderer {
     const bounds = new Rectangle(domMeasure.x, domMeasure.y, domMeasure.width, domMeasure.height);
     prevParent.appendChild(textNode);
 
+    morph._cachedBounds = bounds;
+    morph.renderingState.needsRemeasure = false;
     return bounds;
   }
 
