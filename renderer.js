@@ -506,7 +506,7 @@ export default class Stage0Renderer {
    * @param {Morph} morph - The morph for which to check if it results in multiple nodes.
    */
   isComposite (morph) {
-    return morph.isCanvas || morph.isHTMLMorph || morph.isImage || morph.isCheckbox;
+    return morph.isCanvas || morph.isHTMLMorph || morph.isImage || morph.isCheckbox || morph.name === 'column view';
   }
 
   /**
@@ -862,7 +862,9 @@ export default class Stage0Renderer {
    */
   nodeForLine (lineObject, morph, isRealRender = false) {
     if (lineObject === null) lineObject = '';
-    const line = lineObject.isLine ? lineObject.textAndAttributes : lineObject;
+    let line;
+    if (morph.isListItemMorph) line = morph.textAndAttributes;
+    else line = lineObject.isLine ? lineObject.textAndAttributes : lineObject;
     const size = line.length;
 
     const renderedChunks = [];
@@ -1506,6 +1508,11 @@ export default class Stage0Renderer {
    * @param {TextMorph} morph - The TextMorph for which the text should be (re)rendered.
    */
   renderTextAndAttributes (node, morph) {
+    // FIXME:  hackz
+    if (morph.isLabel && !morph.labelMode){
+      morph.setProperty('labelMode', true);
+    } 
+    if (morph.labelMode && morph.document) morph.makeUninteractive();
     const textNode = node.querySelector('.actual');
     if (morph.labelMode) textNode.replaceChildren(...this.renderAllLines(morph));
     else {
@@ -1725,7 +1732,7 @@ export default class Stage0Renderer {
    * @returns {Rectangle} The actual bounds of `morph` when rendered into the DOM.
    */
   measureBoundsFor (morph) {
-    if (!morph.renderingState.needsRemeasure) return morph._cachedBounds;
+    if (!morph.renderingState.needsRemeasure && morph._cachedBounds) return morph._cachedBounds;
     const node = this.getNodeForMorph(morph);
     if (!node) return Rectangle.inset(0);
     const textNode = node.querySelector('.actual');
